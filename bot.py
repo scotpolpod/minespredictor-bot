@@ -13,11 +13,22 @@ BOT_TOKEN      = os.getenv("BOT_TOKEN")
 WEBAPP_URL     = os.getenv("WEBAPP_URL")
 ADMIN_USERNAME = "rmpl13"
 MANAGER_LINK   = "https://t.me/rmpl13"
-DATA_DIR       = os.getenv("DATA_DIR", ".")
-DATA_FILE      = os.path.join(DATA_DIR, "data.json")
-os.makedirs(DATA_DIR, exist_ok=True)
+DATA_FILE      = "data.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# ── REDIS (опционально) ───────────────────────────────────
+_redis = None
+REDIS_URL = os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL")
+if REDIS_URL:
+    try:
+        import redis as _redis_lib
+        _redis = _redis_lib.from_url(REDIS_URL, decode_responses=True)
+        _redis.ping()
+        print("Redis połączony.")
+    except Exception as _e:
+        print(f"Redis błąd połączenia: {_e}")
+        _redis = None
 
 PLANS = [
     {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
@@ -32,14 +43,29 @@ user_state = {}  # uid -> 'entering_id' | 'entering_code'
 # ── DATA ──────────────────────────────────────────────────
 
 def load_data():
+    if _redis:
+        try:
+            raw = _redis.get("bot_data")
+            if raw:
+                return json.loads(raw)
+        except Exception as e:
+            print(f"Redis load error: {e}")
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"codes": {}, "users": {}}
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    if _redis:
+        try:
+            _redis.set("bot_data", json.dumps(data, ensure_ascii=False))
+        except Exception as e:
+            print(f"Redis save error: {e}")
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
 def is_subscribed(data, uid):
     user = data["users"].get(str(uid), {})
