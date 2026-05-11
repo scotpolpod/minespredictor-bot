@@ -13,7 +13,9 @@ BOT_TOKEN      = os.getenv("BOT_TOKEN")
 WEBAPP_URL     = os.getenv("WEBAPP_URL")
 ADMIN_USERNAME = "rmpl13"
 MANAGER_LINK   = "https://t.me/rmpl13"
-DATA_FILE      = "data.json"
+DATA_DIR       = os.getenv("DATA_DIR", ".")
+DATA_FILE      = os.path.join(DATA_DIR, "data.json")
+os.makedirs(DATA_DIR, exist_ok=True)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
