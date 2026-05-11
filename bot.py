@@ -501,26 +501,25 @@ if __name__ == "__main__":
     import time
     print("MinesPredictor bot uruchomiony...")
 
-    # 1. Usuń webhook i wyczyść wszystkie oczekujące aktualizacje
     try:
         bot.delete_webhook(drop_pending_updates=True)
         print("Webhook usunięty.")
     except Exception as e:
         print(f"delete_webhook error: {e}")
 
-    time.sleep(2)
+    time.sleep(3)
 
-    # 2. Ręcznie przesuń offset — porzuć stare wiadomości z kolejki
-    try:
-        updates = bot.get_updates(offset=-1, timeout=0)
-        if updates:
-            bot.get_updates(offset=updates[-1].update_id + 1, timeout=0)
-            print(f"Porzucono {len(updates)} starych aktualizacji.")
-    except Exception as e:
-        print(f"clear_updates error: {e}")
-
-    time.sleep(1)
-
-    print("Rozpoczynam polling...")
-    bot.infinity_polling(timeout=30, long_polling_timeout=20,
-                         logger_level=None, restart_on_change=False)
+    while True:
+        try:
+            print("Rozpoczynam polling...")
+            bot.infinity_polling(
+                timeout=30,
+                long_polling_timeout=20,
+                skip_pending=True,
+                logger_level=None,
+                restart_on_change=False
+            )
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(10)
+            print("Restartuję polling...")
