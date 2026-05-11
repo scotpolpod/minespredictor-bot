@@ -141,13 +141,16 @@ def cb_plan(call):
 
 @bot.callback_query_handler(func=lambda c: c.data == "back_plans")
 def cb_back_plans(call):
-    bot.edit_message_text(
-        "💳 <b>Wybierz plan:</b>",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        parse_mode="HTML",
-        reply_markup=kb_plans()
-    )
+    try:
+        bot.edit_message_text(
+            "💳 <b>Wybierz plan:</b>",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=kb_plans()
+        )
+    except Exception as e:
+        print(f"cb_back_plans error: {e}")
     bot.answer_callback_query(call.id)
 
 # ── CODE ACTIVATION ───────────────────────────────────────
@@ -156,13 +159,16 @@ def cb_back_plans(call):
 def cb_enter_code(call):
     uid = call.from_user.id
     user_state[uid] = "entering_code"
-    bot.edit_message_text(
-        "🔑 Wpisz swój kod aktywacyjny:",
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        parse_mode="HTML",
-        reply_markup=kb_back_plans()
-    )
+    try:
+        bot.edit_message_text(
+            "🔑 Wpisz swój kod aktywacyjny:",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=kb_back_plans()
+        )
+    except Exception as e:
+        print(f"cb_enter_code error: {e}")
     bot.answer_callback_query(call.id)
 
 @bot.message_handler(commands=["activate"])
@@ -251,7 +257,10 @@ def cb_change_id(call):
         bot.answer_callback_query(call.id, "🔒 Subskrypcja wygasła.", show_alert=True)
         return
     user_state[uid] = "entering_id"
-    bot.send_message(uid, "🔢 Wpisz nowe <b>ID gracza</b>:", parse_mode="HTML")
+    try:
+        bot.send_message(uid, "🔢 Wpisz nowe <b>ID gracza</b>:", parse_mode="HTML")
+    except Exception as e:
+        print(f"cb_change_id error: {e}")
     bot.answer_callback_query(call.id)
 
 # ── MY SUB ────────────────────────────────────────────────
@@ -411,9 +420,12 @@ def cb_adm_gen(call):
 def cb_adm_back(call):
     if not is_admin(call):
         bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
-    bot.edit_message_text("⚙️ <b>Panel Admina</b>",
-        chat_id=call.message.chat.id, message_id=call.message.message_id,
-        parse_mode="HTML", reply_markup=kb_admin_main())
+    try:
+        bot.edit_message_text("⚙️ <b>Panel Admina</b>",
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            parse_mode="HTML", reply_markup=kb_admin_main())
+    except Exception as e:
+        print(f"cb_adm_back error: {e}")
     bot.answer_callback_query(call.id)
 
 # ── /help ─────────────────────────────────────────────────
