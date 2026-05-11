@@ -431,5 +431,13 @@ def cmd_help(message):
 # ── RUN ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import time
     print("MinesPredictor bot uruchomiony...")
-    bot.infinity_polling()
+    # Usuń webhook i poczekaj chwilę — zapobiega błędowi 409
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+        time.sleep(2)
+    except Exception as e:
+        print(f"delete_webhook: {e}")
+    bot.infinity_polling(timeout=30, long_polling_timeout=20,
+                         logger_level=None, restart_on_change=False)
