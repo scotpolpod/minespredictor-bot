@@ -6,74 +6,47 @@ const CRYSTAL_EMOJI = '💎';
 const MINE_EMOJI    = '💣';
 const OPTIMIZE_KEY  = 'mp_last_optimize';
 
-// Читаем параметры из URL (переданные ботом)
-const _params   = new URLSearchParams(window.location.search);
-const _platform = _params.get('platform') || localStorage.getItem('mp_platform') || '';
-const _uid      = _params.get('uid')      || localStorage.getItem('mp_uid')      || '';
-if (_platform) localStorage.setItem('mp_platform', _platform);
-if (_uid)      localStorage.setItem('mp_uid', _uid);
+// Параметры только из URL — localStorage не используется как fallback для безопасности
+const _params = new URLSearchParams(window.location.search);
+const _uid    = _params.get('uid')  || '';
+const _days   = parseInt(_params.get('days') || '0');
 
-let vavadaId   = _uid;
-let platformId = _platform;
+// Если пришли через бот — сохраняем для статистики
+if (_uid) localStorage.setItem('mp_uid', _uid);
+
+// ── GATE: блокируем доступ без uid ───────────────────────
+if (!_uid) {
+  document.getElementById('gate-screen').style.display    = 'flex';
+  document.getElementById('main-screen').style.display    = 'none';
+  document.getElementById('optimize-screen').style.display = 'none';
+}
+
+let vavadaId = _uid;
 let penBlocked = 4;
 
 /* ════════════════════════════════
    TABS
 ════════════════════════════════ */
 function switchTab(tab) {
-  document.getElementById('page-mines').style.display    = tab === 'mines'   ? 'flex' : 'none';
-  document.getElementById('page-penalty').style.display  = tab === 'penalty' ? 'flex' : 'none';
-  document.getElementById('tab-mines').classList.toggle('active', tab === 'mines');
+  document.getElementById('page-mines').style.display   = tab === 'mines'   ? 'flex' : 'none';
+  document.getElementById('page-penalty').style.display = tab === 'penalty' ? 'flex' : 'none';
+  document.getElementById('page-sub').style.display     = tab === 'sub'     ? 'flex' : 'none';
+  document.getElementById('tab-mines').classList.toggle('active',   tab === 'mines');
   document.getElementById('tab-penalty').classList.toggle('active', tab === 'penalty');
-  document.getElementById('header-logo').textContent = tab === 'mines' ? '💎 MinesPredictor' : '⚽ PenaltyPredictor';
+  document.getElementById('tab-sub').classList.toggle('active',     tab === 'sub');
+  var logos = { mines: '💎 MinesPredictor', penalty: '⚽ PenaltyPredictor', sub: '🔑 MinesPredictor' };
+  document.getElementById('header-logo').textContent = logos[tab] || '💎 MinesPredictor';
 }
-
-/* ════════════════════════════════
-   MODAL
-════════════════════════════════ */
-function showModal() {
-  document.getElementById('id-modal').style.display = 'flex';
-}
-function hideModal() {
-  document.getElementById('id-modal').style.display = 'none';
-}
-function openIdModal() { showModal(); }
-
-document.getElementById('id-modal').addEventListener('click', function(e) {
-  var id = e.target.id;
-  if (id === 'modal-close' || id === 'confirm-id-btn' || e.target === this) {
-    if (id === 'confirm-id-btn') {
-      var val = (document.getElementById('vavada-id-input').value || '').trim();
-      if (!val) {
-        document.getElementById('id-error').style.display = 'block';
-        return;
-      }
-      vavadaId = val;
-      localStorage.setItem('mp_vavada_id', vavadaId);
-      updateVavadaDisplay();
-    }
-    hideModal();
-  }
-});
-
-document.getElementById('vavada-id-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') document.getElementById('confirm-id-btn').click();
-});
 
 /* ════════════════════════════════
    VAVADA DISPLAY
 ════════════════════════════════ */
 function updateVavadaDisplay() {
-  var label = platformId || 'Kasyno';
-  var text  = vavadaId
-    ? '🎰 ' + label + ' ID: ' + vavadaId
-    : '🎰 Brak ID — ustaw w bocie';
+  var text   = vavadaId ? '🎰 ID: ' + vavadaId : '🎰 Brak ID — ustaw w bocie';
   var hasCls = vavadaId ? 'add' : 'remove';
-
-  var el = document.getElementById('vavada-display');
-  if (el) { document.getElementById('vavada-id-text').textContent = text; el.classList[hasCls]('has-id'); }
-
+  var el  = document.getElementById('vavada-display');
   var el2 = document.getElementById('vavada-display-pen');
+  if (el)  { document.getElementById('vavada-id-text').textContent = text;     el.classList[hasCls]('has-id'); }
   if (el2) { document.getElementById('vavada-id-text-pen').textContent = text; el2.classList[hasCls]('has-id'); }
 }
 
@@ -180,43 +153,88 @@ function getPenaltySignal() {
 function renderPenaltySignal() {
   var cells = document.querySelectorAll('.goal-cell');
   var total = 15;
-
-  // shuffle indices
   var indices = Array.from({length: total}, function(_, i) { return i; });
   for (var i = indices.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1));
     var t = indices[i]; indices[i] = indices[j]; indices[j] = t;
   }
-
-  var blockedSet = new Set(indices.slice(0, penBlocked));
-  // pick 1 signal zone from the safe ones
-  var safe = indices.slice(penBlocked);
-  var signalCount = Math.floor(Math.random() * 3) + 1; // 1, 2 или 3
-  var signalSet = new Set(safe.slice(0, signalCount));
-
+  var blockedSet  = new Set(indices.slice(0, penBlocked));
+  var safe        = indices.slice(penBlocked);
+  var signalCount = Math.floor(Math.random() * 3) + 1;
+  var signalSet   = new Set(safe.slice(0, signalCount));
   cells.forEach(function(cell, i) {
     cell.className = 'goal-cell';
     cell.textContent = '';
     setTimeout(function() {
       cell.classList.add('revealing-goal');
-      if (signalSet.has(i)) {
-        cell.classList.add('signal-zone');
-        cell.textContent = '✅';
-      }
+      if (signalSet.has(i)) { cell.classList.add('signal-zone'); cell.textContent = '✅'; }
     }, i * 35);
   });
-
-  // stats
   var chance  = (72 + Math.floor(Math.random() * 18)) + '%';
   var rowName = signalCount + (signalCount === 1 ? ' strefa' : ' strefy');
   var acc     = (83 + Math.floor(Math.random() * 12)) + '%';
-
   setTimeout(function() {
-    document.getElementById('pen-stat-zone').textContent    = rowName;
-    document.getElementById('pen-stat-chance').textContent  = chance;
+    document.getElementById('pen-stat-zone').textContent     = rowName;
+    document.getElementById('pen-stat-chance').textContent   = chance;
     document.getElementById('pen-stat-accuracy').textContent = acc;
     document.querySelectorAll('#page-penalty .stat-box').forEach(function(b) { b.classList.add('active'); });
   }, 15 * 35 + 100);
+}
+
+/* ════════════════════════════════
+   SUBSCRIPTION TAB
+════════════════════════════════ */
+function initSubTab() {
+  var days  = _days;
+  var card  = document.getElementById('sub-card');
+  var icon  = document.getElementById('sub-card-icon');
+  var title = document.getElementById('sub-card-title');
+  var det   = document.getElementById('sub-card-detail');
+
+  if (days > 0) {
+    card.classList.add('active');
+    icon.textContent  = '✅';
+    title.textContent = 'Subskrypcja aktywna';
+    det.textContent   = 'Pozostało: ' + days + ' dni';
+  } else {
+    card.classList.add('inactive');
+    icon.textContent  = '🔒';
+    title.textContent = 'Brak subskrypcji';
+    det.textContent   = 'Aktywuj kod lub kup plan poniżej';
+  }
+
+  // Kupno — otwiera czat @rmpl13
+  addBtn('btn-buy', function() {
+    if (tg && tg.openTelegramLink) tg.openTelegramLink('https://t.me/rmpl13');
+    else window.open('https://t.me/rmpl13', '_blank');
+  });
+
+  // Aktywacja kodu
+  addBtn('code-activate-btn', function() {
+    var inp   = document.getElementById('code-input');
+    var err   = document.getElementById('code-error');
+    var code  = (inp.value || '').trim().toUpperCase();
+    err.style.display = 'none';
+    inp.style.borderColor = '';
+    if (!code || code.length < 5) {
+      inp.style.borderColor = '#ef4444';
+      err.style.display = 'block';
+      return;
+    }
+    if (tg && tg.sendData) {
+      tg.sendData(JSON.stringify({ type: 'activate_code', code: code }));
+    }
+  });
+
+  // Uppercase input auto
+  var codeInp = document.getElementById('code-input');
+  if (codeInp) {
+    codeInp.addEventListener('input', function() {
+      var pos = this.selectionStart;
+      this.value = this.value.toUpperCase();
+      this.setSelectionRange(pos, pos);
+    });
+  }
 }
 
 /* ════════════════════════════════
@@ -257,28 +275,40 @@ function checkDailyOptimize() {
 }
 
 /* ════════════════════════════════
-   INIT
+   HELPER: addBtn
 ════════════════════════════════ */
-initGrid();
-initGoal();
-updateVavadaDisplay();
-syncDifficulty();
-document.getElementById('difficulty').addEventListener('input', syncDifficulty);
-
-// явно выставляем начальное состояние вкладок
-document.getElementById('page-mines').style.display   = 'flex';
-document.getElementById('page-penalty').style.display = 'none';
-
-// обработчики табов
 function addBtn(id, fn) {
   var el = document.getElementById(id);
+  if (!el) return;
   el.addEventListener('touchstart', function(e) { e.preventDefault(); fn(); }, { passive: false });
   el.addEventListener('click', fn);
 }
 
-addBtn('tab-mines',    function() { switchTab('mines'); });
-addBtn('tab-penalty',  function() { switchTab('penalty'); });
-addBtn('signal-btn',   getSignal);
-addBtn('pen-signal-btn', getPenaltySignal);
+/* ════════════════════════════════
+   INIT
+════════════════════════════════ */
+if (!_uid) {
+  // Gate screen — кнопка закрытия
+  addBtn('gate-close-btn', function() { if (tg) tg.close(); });
 
-checkDailyOptimize();
+} else {
+  // Полная инициализация
+  initGrid();
+  initGoal();
+  updateVavadaDisplay();
+  syncDifficulty();
+  document.getElementById('difficulty').addEventListener('input', syncDifficulty);
+
+  document.getElementById('page-mines').style.display   = 'flex';
+  document.getElementById('page-penalty').style.display = 'none';
+  document.getElementById('page-sub').style.display     = 'none';
+
+  addBtn('tab-mines',      function() { switchTab('mines'); });
+  addBtn('tab-penalty',    function() { switchTab('penalty'); });
+  addBtn('tab-sub',        function() { switchTab('sub'); });
+  addBtn('signal-btn',     getSignal);
+  addBtn('pen-signal-btn', getPenaltySignal);
+
+  initSubTab();
+  checkDailyOptimize();
+}

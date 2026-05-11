@@ -9,6 +9,16 @@
 </head>
 <body>
 
+<!-- Экран-заглушка (открыт не через бота) -->
+<div id="gate-screen" style="display:none">
+  <div class="gate-box">
+    <div class="gate-icon">🔒</div>
+    <h2>Wymagany dostęp</h2>
+    <p>Otwórz predyktor przez bota Telegram, aby uzyskać dostęp do sygnałów.</p>
+    <button class="btn-gate" id="gate-close-btn">Wróć do bota</button>
+  </div>
+</div>
+
 <!-- Экран оптимизации -->
 <div id="optimize-screen" style="display:none">
   <div class="optimize-box">
@@ -22,19 +32,6 @@
   </div>
 </div>
 
-<!-- Модалка ID Vavada -->
-<div id="id-modal" class="modal" style="display:none">
-  <div class="modal-box">
-    <div class="modal-close" id="modal-close">✕</div>
-    <div class="modal-icon">🎰</div>
-    <h3>Twoje ID z Vavady</h3>
-    <p>Podaj ID gracza, aby zsynchronizować algorytm z Twoim kontem.</p>
-    <input type="text" id="vavada-id-input" placeholder="Np. 1234567" maxlength="20" />
-    <button class="btn-confirm" type="button" id="confirm-id-btn">Potwierdź</button>
-    <div id="id-error" class="id-error hidden">⚠️ Wprowadź poprawne ID</div>
-  </div>
-</div>
-
 <!-- Основной экран -->
 <div id="main-screen">
 
@@ -44,10 +41,11 @@
     <div class="algo-badge" id="algo-badge">🔄 Algo: aktualny</div>
   </header>
 
-  <!-- Табы -->
-  <div class="tabs">
+  <!-- Табы (3 колонки) -->
+  <div class="tabs tabs-3">
     <div class="tab active" id="tab-mines">💎 Mines</div>
     <div class="tab" id="tab-penalty">⚽ Penalty</div>
+    <div class="tab" id="tab-sub">🔑 Konto</div>
   </div>
 
   <!-- ══════════ TAB: MINES ══════════ -->
@@ -126,7 +124,6 @@
       </div>
     </section>
 
-    <!-- Ворота -->
     <section class="goal-section">
       <div class="goal-wrap">
         <div class="goal-crossbar"></div>
@@ -186,6 +183,43 @@
         </ul>
       </div>
     </section>
+  </div>
+
+  <!-- ══════════ TAB: KONTO ══════════ -->
+  <div id="page-sub" class="page" style="display:none">
+
+    <!-- Status subskrypcji -->
+    <div class="sub-card" id="sub-card">
+      <div class="sub-card-icon" id="sub-card-icon">⏳</div>
+      <div class="sub-card-content">
+        <div class="sub-card-title" id="sub-card-title">Sprawdzanie...</div>
+        <div class="sub-card-detail" id="sub-card-detail"></div>
+      </div>
+    </div>
+
+    <!-- Plany -->
+    <div class="sub-section">
+      <div class="sub-section-title">💳 Dostępne plany</div>
+      <div class="sub-plans">
+        <div class="sub-plan-row"><span class="plan-label">🎁 7 dni Trial</span><span class="plan-price">BEZPŁATNY</span></div>
+        <div class="sub-plan-row"><span class="plan-label">📅 14 dni</span><span class="plan-price">250 zł</span></div>
+        <div class="sub-plan-row"><span class="plan-label">📅 30 dni</span><span class="plan-price">399 zł</span></div>
+        <div class="sub-plan-row"><span class="plan-label">📅 60 dni</span><span class="plan-price">649 zł</span></div>
+        <div class="sub-plan-row"><span class="plan-label">📅 90 dni</span><span class="plan-price">849 zł</span></div>
+      </div>
+      <button class="btn-buy" id="btn-buy">💬 Kup subskrypcję u @rmpl13</button>
+    </div>
+
+    <!-- Aktywacja kodu -->
+    <div class="sub-section">
+      <div class="sub-section-title">🔑 Aktywuj kod promocyjny</div>
+      <div class="code-input-wrap">
+        <input type="text" id="code-input" placeholder="MP-XXXXXXXX" maxlength="12" autocomplete="off" />
+        <button class="btn-activate" id="code-activate-btn">Aktywuj</button>
+      </div>
+      <div id="code-error" style="display:none; color:#ef4444; font-size:13px; margin-top:4px;">⚠️ Wprowadź poprawny kod</div>
+    </div>
+
   </div>
 
 </div><!-- /main-screen -->

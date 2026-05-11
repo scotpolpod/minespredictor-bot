@@ -100,13 +100,23 @@ def cmd_start(message):
     user_state.pop(uid, None)
 
     if is_subscribed(data, uid):
-        dl = days_left(data, uid)
-        user_state[uid] = "entering_id"
-        bot.send_message(uid,
-            f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
-            f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
-            f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
-            parse_mode="HTML")
+        dl        = days_left(data, uid)
+        player_id = data["users"].get(str(uid), {}).get("player_id", "")
+        if player_id:
+            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+            bot.send_message(uid,
+                f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
+                f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
+                f"👇 Otwórz predyktor:",
+                parse_mode="HTML",
+                reply_markup=kb_open_app(url))
+        else:
+            user_state[uid] = "entering_id"
+            bot.send_message(uid,
+                f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
+                f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
+                f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+                parse_mode="HTML")
     else:
         bot.send_message(uid,
             "👋 Witaj w <b>MinesPredictor</b>!\n\n"
@@ -185,8 +195,16 @@ def process_code(uid, code, chat_id):
     data = load_data()
 
     if is_subscribed(data, uid):
-        dl = days_left(data, uid)
-        bot.send_message(chat_id, f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.", parse_mode="HTML")
+        dl        = days_left(data, uid)
+        player_id = data["users"].get(str(uid), {}).get("player_id", "")
+        if player_id:
+            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+            bot.send_message(chat_id,
+                f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.",
+                parse_mode="HTML", reply_markup=kb_open_app(url))
+        else:
+            bot.send_message(chat_id,
+                f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.", parse_mode="HTML")
         return
 
     codes = data.get("codes", {})
@@ -199,27 +217,45 @@ def process_code(uid, code, chat_id):
         bot.send_message(chat_id, "❌ Ten kod został już użyty.", reply_markup=kb_back_plans())
         return
 
-    days           = c["days"]
-    end            = (datetime.now() + timedelta(days=days)).isoformat()
-    c["used"]      = True
-    c["used_by"]   = uid
-    c["used_at"]   = datetime.now().isoformat()
+    days     = c["days"]
+    end      = (datetime.now() + timedelta(days=days)).isoformat()
+    c["used"]    = True
+    c["used_by"] = uid
+    c["used_at"] = datetime.now().isoformat()
+
+    existing  = data["users"].get(str(uid), {})
+    player_id = existing.get("player_id", "")
+
     data["users"][str(uid)] = {
         "subscription_end": end,
         "activated_code":   code,
         "activated_at":     datetime.now().isoformat(),
-        "username":         "",
-        "first_name":       ""
+        "username":         existing.get("username", ""),
+        "first_name":       existing.get("first_name", ""),
+        "player_id":        player_id
     }
     save_data(data)
-    user_state[uid] = "entering_id"
 
-    bot.send_message(chat_id,
-        f"🎉 Subskrypcja aktywowana!\n\n"
-        f"📅 Plan: <b>{days} dni</b>\n"
-        f"⏳ Aktywna do: <b>{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')}</b>\n\n"
-        f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
-        parse_mode="HTML")
+    exp_str = (datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')
+
+    if player_id:
+        dl  = days_left(data, uid)
+        url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+        user_state[uid] = None
+        bot.send_message(chat_id,
+            f"🎉 Subskrypcja aktywowana!\n\n"
+            f"📅 Plan: <b>{days} dni</b>\n"
+            f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
+            f"👇 Otwórz predyktor:",
+            parse_mode="HTML", reply_markup=kb_open_app(url))
+    else:
+        user_state[uid] = "entering_id"
+        bot.send_message(chat_id,
+            f"🎉 Subskrypcja aktywowana!\n\n"
+            f"📅 Plan: <b>{days} dni</b>\n"
+            f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
+            f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+            parse_mode="HTML")
 
 # ── ID ENTRY ──────────────────────────────────────────────
 
@@ -238,8 +274,13 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
+    # Zapisz player_id
+    if str(uid) in data["users"]:
+        data["users"][str(uid)]["player_id"] = player_id
+        save_data(data)
+
     dl  = days_left(data, uid)
-    url = f"{WEBAPP_URL}?uid={player_id}"
+    url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
     user_state[uid] = None
 
     bot.send_message(uid,
@@ -248,6 +289,20 @@ def msg_id(message):
         f"👇 Otwórz predyktor:",
         parse_mode="HTML",
         reply_markup=kb_open_app(url))
+
+
+@bot.message_handler(content_types=['web_app_data'])
+def handle_webapp_data(message):
+    uid = message.from_user.id
+    try:
+        payload = json.loads(message.web_app_data.data)
+    except Exception as e:
+        print(f"webapp_data parse error: {e}")
+        return
+    if payload.get('type') == 'activate_code':
+        code = payload.get('code', '').strip().upper()
+        if code:
+            process_code(uid, code, message.chat.id)
 
 @bot.callback_query_handler(func=lambda c: c.data == "change_id")
 def cb_change_id(call):
