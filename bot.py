@@ -120,11 +120,10 @@ def cmd_start(message):
             uid,
             f"👋 Witaj z powrotem w <b>MinesPredictor</b>!\n\n"
             f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
-            f"📌 Wybierz platformę, aby rozpocząć:",
-            parse_mode="HTML",
-            reply_markup=kb_platform()
+            f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+            parse_mode="HTML"
         )
-        user_state[uid] = "choosing_platform"
+        user_state[uid] = "entering_id"
     else:
         bot.send_message(
             uid,
@@ -247,11 +246,10 @@ def activate_code(uid, code, message):
         f"🎉 Subskrypcja aktywowana!\n\n"
         f"📅 Plan: <b>{days} dni</b>\n"
         f"⏳ Aktywna do: <b>{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')}</b>\n\n"
-        f"📌 Teraz wybierz platformę:",
-        parse_mode="HTML",
-        reply_markup=kb_platform()
+        f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+        parse_mode="HTML"
     )
-    user_state[uid] = "choosing_platform"
+    user_state[uid] = "entering_id"
 
 # ╔══════════════════════════════════════════════════════╗
 #   ВЫБОР ПЛАТФОРМЫ → ВВОД ID
@@ -292,16 +290,13 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    platform   = user_platform.get(uid, "Kasyno")
     dl         = days_left(data, uid)
-    webapp_url = f"{WEBAPP_URL}?platform={platform}&uid={player_id}"
+    webapp_url = f"{WEBAPP_URL}?uid={player_id}"
     user_state[uid] = None
 
     bot.send_message(
         uid,
-        f"🎉 Wszystko gotowe!\n\n"
-        f"🏷 Platforma: <b>{platform}</b>\n"
-        f"🔢 ID gracza: <b>{player_id}</b>\n"
+        f"✅ ID: <b>{player_id}</b>\n"
         f"⏳ Subskrypcja: <b>{dl} dni</b>\n\n"
         f"👇 Otwórz predyktor:",
         parse_mode="HTML",
