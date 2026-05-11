@@ -17,9 +17,17 @@ DATA_FILE      = "data.json"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ╔══════════════════════════════════════════════════════╗
-#   ХРАНИЛИЩЕ ДАННЫХ
-# ╚══════════════════════════════════════════════════════╝
+PLANS = [
+    {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
+    {"label": "📅 14 dni",       "days": 14, "price": "250 zł"},
+    {"label": "📅 30 dni",       "days": 30, "price": "399 zł"},
+    {"label": "📅 60 dni",       "days": 60, "price": "649 zł"},
+    {"label": "📅 90 dni",       "days": 90, "price": "849 zł"},
+]
+
+user_state = {}  # uid -> 'entering_id' | 'entering_code'
+
+# ── DATA ──────────────────────────────────────────────────
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -31,150 +39,118 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def get_user(data, uid):
-    return data["users"].get(str(uid), {})
-
 def is_subscribed(data, uid):
-    user = get_user(data, uid)
+    user = data["users"].get(str(uid), {})
     end  = user.get("subscription_end")
     if not end:
         return False
     return datetime.now() < datetime.fromisoformat(end)
 
 def days_left(data, uid):
-    user = get_user(data, uid)
+    user = data["users"].get(str(uid), {})
     end  = user.get("subscription_end")
     if not end:
         return 0
-    delta = datetime.fromisoformat(end) - datetime.now()
-    return max(0, delta.days)
+    return max(0, (datetime.fromisoformat(end) - datetime.now()).days)
 
-def is_admin(msg):
-    u = msg.from_user.username
+def is_admin(obj):
+    u = obj.from_user.username
     return u and u.lower() == ADMIN_USERNAME.lower()
 
 def gen_code():
-    chars = string.ascii_uppercase + string.digits
-    return "MP-" + "".join(random.choices(chars, k=8))
+    return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
-# ╔══════════════════════════════════════════════════════╗
-#   СОСТОЯНИЯ ПОЛЬЗОВАТЕЛЕЙ
-# ╚══════════════════════════════════════════════════════╝
-user_state    = {}   # uid -> 'choosing_platform' | 'entering_id' | 'entering_code'
-user_platform = {}   # uid -> platform
-
-PLANS = [
-    {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY",  "free": True},
-    {"label": "📅 14 dni",       "days": 14, "price": "250 zł",     "free": False},
-    {"label": "📅 30 dni",       "days": 30, "price": "399 zł",     "free": False},
-    {"label": "📅 60 dni",       "days": 60, "price": "649 zł",     "free": False},
-    {"label": "📅 90 dni",       "days": 90, "price": "849 zł",     "free": False},
-]
-
-# ╔══════════════════════════════════════════════════════╗
-#   КЛАВИАТУРЫ
-# ╚══════════════════════════════════════════════════════╝
-
-def kb_platform():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🎰 Vavada",     callback_data="pl:Vavada"))
-    kb.add(InlineKeyboardButton("🎲 SpinBetter", callback_data="pl:SpinBetter"))
-    kb.add(InlineKeyboardButton("💎 SlotsGem",   callback_data="pl:SlotsGem"))
-    return kb
+# ── KEYBOARDS ─────────────────────────────────────────────
 
 def kb_plans():
     kb = InlineKeyboardMarkup()
     for i, p in enumerate(PLANS):
-        label = f"{p['label']} — {p['price']}"
-        kb.add(InlineKeyboardButton(label, callback_data=f"plan:{i}"))
+        kb.add(InlineKeyboardButton(f"{p['label']} — {p['price']}", callback_data=f"plan_{i}"))
     kb.add(InlineKeyboardButton("🔑 Mam kod aktywacyjny", callback_data="enter_code"))
     return kb
 
 def kb_open_app(url):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🚀 Otwórz MinesPredictor", web_app=WebAppInfo(url=url)))
-    kb.add(InlineKeyboardButton("🔄 Zmień platformę/ID",    callback_data="restart"))
-    kb.add(InlineKeyboardButton("📊 Moja subskrypcja",      callback_data="my_sub"))
+    kb.add(InlineKeyboardButton("🔄 Zmień ID",          callback_data="change_id"))
+    kb.add(InlineKeyboardButton("📊 Moja subskrypcja",  callback_data="my_sub"))
     return kb
 
-def kb_back():
+def kb_back_plans():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("◀️ Wróć", callback_data="restart"))
+    kb.add(InlineKeyboardButton("◀️ Wróć do planów", callback_data="back_plans"))
     return kb
 
-# ╔══════════════════════════════════════════════════════╗
-#   /start
-# ╚══════════════════════════════════════════════════════╝
+def kb_admin_main():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("➕ Nowy kod",    callback_data="adm_newcode"),
+        InlineKeyboardButton("📋 Lista kodów", callback_data="adm_codes"),
+        InlineKeyboardButton("👥 Użytkownicy", callback_data="adm_users"),
+        InlineKeyboardButton("📊 Statystyki",  callback_data="adm_stats"),
+    )
+    return kb
+
+# ── /start ────────────────────────────────────────────────
 
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
     uid  = message.from_user.id
     data = load_data()
-
     user_state.pop(uid, None)
-    user_platform.pop(uid, None)
 
     if is_subscribed(data, uid):
         dl = days_left(data, uid)
-        bot.send_message(
-            uid,
-            f"👋 Witaj z powrotem w <b>MinesPredictor</b>!\n\n"
+        user_state[uid] = "entering_id"
+        bot.send_message(uid,
+            f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
             f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
             f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
-            parse_mode="HTML"
-        )
-        user_state[uid] = "entering_id"
+            parse_mode="HTML")
     else:
-        bot.send_message(
-            uid,
+        bot.send_message(uid,
             "👋 Witaj w <b>MinesPredictor</b>!\n\n"
-            "🎯 Algorytm przewiduje lokalizację min, kryształów\n"
-            "i optymalną strefę uderzenia w Penalty.\n\n"
-            "🔒 Aby korzystać z predyktora, aktywuj subskrypcję.\n"
+            "🎯 Algorytm przewiduje miny, kryształy i strefy penalty.\n\n"
+            "🔒 Aby korzystać — aktywuj subskrypcję.\n"
             "Masz kod? Kliknij <b>«Mam kod aktywacyjny»</b>.\n\n"
             "💳 <b>Wybierz plan:</b>",
             parse_mode="HTML",
-            reply_markup=kb_plans()
-        )
+            reply_markup=kb_plans())
 
-# ╔══════════════════════════════════════════════════════╗
-#   ВЫБОР ПЛАНА
-# ╚══════════════════════════════════════════════════════╝
+# ── PLAN SELECTION ────────────────────────────────────────
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("plan:"))
+@bot.callback_query_handler(func=lambda c: c.data.startswith("plan_"))
 def cb_plan(call):
-    uid = call.from_user.id
-    idx = int(call.data.split(":")[1])
-    plan = PLANS[idx]
-
-    if plan["free"]:
-        bot.edit_message_text(
-            f"🎁 <b>Trial 7 dni — BEZPŁATNY</b>\n\n"
-            f"Aby aktywować trial, potrzebujesz kodu promocyjnego.\n"
-            f"Skontaktuj się z menedżerem, aby go otrzymać:\n\n"
-            f"👤 <a href='{MANAGER_LINK}'>@rmpl13</a>",
-            chat_id=uid,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=kb_back()
-        )
-    else:
+    try:
+        idx  = int(call.data.split("_")[1])
+        plan = PLANS[idx]
         bot.edit_message_text(
             f"💳 <b>{plan['label']} — {plan['price']}</b>\n\n"
-            f"Aby zakupić subskrypcję, skontaktuj się z menedżerem:\n\n"
+            f"Skontaktuj się z menedżerem w celu zakupu/aktywacji:\n\n"
             f"👤 <a href='{MANAGER_LINK}'>@rmpl13</a>\n\n"
-            f"Po opłaceniu otrzymasz <b>kod aktywacyjny</b>.\n"
-            f"Wróć i wpisz go klikając «Mam kod aktywacyjny».",
-            chat_id=uid,
+            f"Po otrzymaniu kodu wróć i kliknij\n<b>«Mam kod aktywacyjny»</b>",
+            chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode="HTML",
-            reply_markup=kb_back()
+            reply_markup=kb_back_plans(),
+            disable_web_page_preview=True
         )
+    except Exception as e:
+        print(f"cb_plan error: {e}")
     bot.answer_callback_query(call.id)
 
-# ╔══════════════════════════════════════════════════════╗
-#   ВВОД ПРОМОКОДА
-# ╚══════════════════════════════════════════════════════╝
+@bot.callback_query_handler(func=lambda c: c.data == "back_plans")
+def cb_back_plans(call):
+    bot.edit_message_text(
+        "💳 <b>Wybierz plan:</b>",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=kb_plans()
+    )
+    bot.answer_callback_query(call.id)
+
+# ── CODE ACTIVATION ───────────────────────────────────────
 
 @bot.callback_query_handler(func=lambda c: c.data == "enter_code")
 def cb_enter_code(call):
@@ -182,99 +158,64 @@ def cb_enter_code(call):
     user_state[uid] = "entering_code"
     bot.edit_message_text(
         "🔑 Wpisz swój kod aktywacyjny:",
-        chat_id=uid,
+        chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         parse_mode="HTML",
-        reply_markup=kb_back()
+        reply_markup=kb_back_plans()
     )
     bot.answer_callback_query(call.id)
 
 @bot.message_handler(commands=["activate"])
 def cmd_activate(message):
-    uid  = message.from_user.id
     parts = message.text.strip().split()
-    if len(parts) < 2:
-        bot.send_message(uid, "Użycie: /activate KOD")
-        return
-    activate_code(uid, parts[1].upper(), message)
+    code  = parts[1].upper() if len(parts) > 1 else ""
+    process_code(message.from_user.id, code, message.chat.id)
 
 @bot.message_handler(func=lambda m: user_state.get(m.from_user.id) == "entering_code")
 def msg_code(message):
-    uid  = message.from_user.id
-    code = message.text.strip().upper()
-    activate_code(uid, code, message)
+    process_code(message.from_user.id, message.text.strip().upper(), message.chat.id)
 
-def activate_code(uid, code, message):
+def process_code(uid, code, chat_id):
     data = load_data()
 
-    if str(uid) in data["users"] and is_subscribed(data, uid):
+    if is_subscribed(data, uid):
         dl = days_left(data, uid)
-        bot.send_message(uid, f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.", parse_mode="HTML")
+        bot.send_message(chat_id, f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.", parse_mode="HTML")
         return
 
     codes = data.get("codes", {})
     if code not in codes:
-        bot.send_message(uid, "❌ Nieprawidłowy kod. Sprawdź i spróbuj ponownie.", reply_markup=kb_back())
+        bot.send_message(chat_id, "❌ Nieprawidłowy kod. Sprawdź i spróbuj ponownie.", reply_markup=kb_back_plans())
         return
 
     c = codes[code]
     if c["used"]:
-        bot.send_message(uid, "❌ Ten kod został już użyty.", reply_markup=kb_back())
+        bot.send_message(chat_id, "❌ Ten kod został już użyty.", reply_markup=kb_back_plans())
         return
 
-    # Активируем
-    days = c["days"]
-    end  = (datetime.now() + timedelta(days=days)).isoformat()
-    c["used"]    = True
-    c["used_by"] = uid
-    c["used_at"] = datetime.now().isoformat()
-
-    uname = message.from_user.username or ""
-    fname = message.from_user.first_name or ""
+    days           = c["days"]
+    end            = (datetime.now() + timedelta(days=days)).isoformat()
+    c["used"]      = True
+    c["used_by"]   = uid
+    c["used_at"]   = datetime.now().isoformat()
     data["users"][str(uid)] = {
         "subscription_end": end,
         "activated_code":   code,
-        "username":         uname,
-        "first_name":       fname,
-        "activated_at":     datetime.now().isoformat()
+        "activated_at":     datetime.now().isoformat(),
+        "username":         "",
+        "first_name":       ""
     }
     save_data(data)
+    user_state[uid] = "entering_id"
 
-    user_state.pop(uid, None)
-    bot.send_message(
-        uid,
+    bot.send_message(chat_id,
         f"🎉 Subskrypcja aktywowana!\n\n"
         f"📅 Plan: <b>{days} dni</b>\n"
         f"⏳ Aktywna do: <b>{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')}</b>\n\n"
         f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
-        parse_mode="HTML"
-    )
-    user_state[uid] = "entering_id"
+        parse_mode="HTML")
 
-# ╔══════════════════════════════════════════════════════╗
-#   ВЫБОР ПЛАТФОРМЫ → ВВОД ID
-# ╚══════════════════════════════════════════════════════╝
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("pl:"))
-def cb_platform(call):
-    uid      = call.from_user.id
-    data     = load_data()
-    platform = call.data.split(":")[1]
-
-    if not is_subscribed(data, uid):
-        bot.answer_callback_query(call.id, "🔒 Najpierw aktywuj subskrypcję!", show_alert=True)
-        return
-
-    user_platform[uid] = platform
-    user_state[uid]    = "entering_id"
-    bot.edit_message_text(
-        f"✅ Platforma: <b>{platform}</b>\n\n"
-        f"🔢 Wpisz swoje <b>ID gracza</b> z {platform}:",
-        chat_id=uid,
-        message_id=call.message.message_id,
-        parse_mode="HTML"
-    )
-    bot.answer_callback_query(call.id)
+# ── ID ENTRY ──────────────────────────────────────────────
 
 @bot.message_handler(func=lambda m: user_state.get(m.from_user.id) == "entering_id")
 def msg_id(message):
@@ -284,260 +225,210 @@ def msg_id(message):
 
     if not is_subscribed(data, uid):
         bot.send_message(uid, "🔒 Twoja subskrypcja wygasła. Użyj /start aby odnowić.")
+        user_state.pop(uid, None)
         return
 
     if not player_id or len(player_id) < 2:
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    dl         = days_left(data, uid)
-    webapp_url = f"{WEBAPP_URL}?uid={player_id}"
+    dl  = days_left(data, uid)
+    url = f"{WEBAPP_URL}?uid={player_id}"
     user_state[uid] = None
 
-    bot.send_message(
-        uid,
+    bot.send_message(uid,
         f"✅ ID: <b>{player_id}</b>\n"
         f"⏳ Subskrypcja: <b>{dl} dni</b>\n\n"
         f"👇 Otwórz predyktor:",
         parse_mode="HTML",
-        reply_markup=kb_open_app(webapp_url)
-    )
+        reply_markup=kb_open_app(url))
 
-# ╔══════════════════════════════════════════════════════╗
-#   МОЯ ПОДПИСКА
-# ╚══════════════════════════════════════════════════════╝
+@bot.callback_query_handler(func=lambda c: c.data == "change_id")
+def cb_change_id(call):
+    uid = call.from_user.id
+    data = load_data()
+    if not is_subscribed(data, uid):
+        bot.answer_callback_query(call.id, "🔒 Subskrypcja wygasła.", show_alert=True)
+        return
+    user_state[uid] = "entering_id"
+    bot.send_message(uid, "🔢 Wpisz nowe <b>ID gracza</b>:", parse_mode="HTML")
+    bot.answer_callback_query(call.id)
+
+# ── MY SUB ────────────────────────────────────────────────
 
 @bot.callback_query_handler(func=lambda c: c.data == "my_sub")
 def cb_my_sub(call):
     uid  = call.from_user.id
     data = load_data()
-    user = get_user(data, uid)
+    user = data["users"].get(str(uid), {})
 
-    if not user or not is_subscribed(data, uid):
+    if not is_subscribed(data, uid):
         bot.answer_callback_query(call.id, "Brak aktywnej subskrypcji.", show_alert=True)
         return
 
-    end = datetime.fromisoformat(user["subscription_end"]).strftime("%d.%m.%Y")
-    dl  = days_left(data, uid)
+    end  = datetime.fromisoformat(user["subscription_end"]).strftime("%d.%m.%Y")
+    dl   = days_left(data, uid)
     code = user.get("activated_code", "—")
     bot.answer_callback_query(call.id)
-    bot.send_message(
-        uid,
+    bot.send_message(uid,
         f"📊 <b>Twoja subskrypcja</b>\n\n"
         f"✅ Status: Aktywna\n"
         f"📅 Wygasa: <b>{end}</b>\n"
         f"⏳ Pozostało: <b>{dl} dni</b>\n"
         f"🔑 Kod: <code>{code}</code>",
-        parse_mode="HTML"
-    )
+        parse_mode="HTML")
 
-# ╔══════════════════════════════════════════════════════╗
-#   RESTART
-# ╚══════════════════════════════════════════════════════╝
-
-@bot.callback_query_handler(func=lambda c: c.data == "restart")
-def cb_restart(call):
-    uid = call.from_user.id
-    user_state.pop(uid, None)
-    user_platform.pop(uid, None)
-    bot.delete_message(uid, call.message.message_id)
-    cmd_start(call.message)
-    bot.answer_callback_query(call.id)
-
-# ╔══════════════════════════════════════════════════════╗
-#   АДМИН-ПАНЕЛЬ
-# ╚══════════════════════════════════════════════════════╝
+# ── ADMIN ─────────────────────────────────────────────────
 
 @bot.message_handler(commands=["admin"])
 def cmd_admin(message):
     if not is_admin(message):
         return
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("➕ Nowy kod",    callback_data="adm:newcode"),
-        InlineKeyboardButton("📋 Lista kodów", callback_data="adm:codes"),
-        InlineKeyboardButton("👥 Użytkownicy", callback_data="adm:users"),
-        InlineKeyboardButton("📊 Statystyki",  callback_data="adm:stats"),
-    )
-    bot.send_message(message.chat.id, "⚙️ <b>Panel Admina</b>", parse_mode="HTML", reply_markup=kb)
+    bot.send_message(message.chat.id, "⚙️ <b>Panel Admina</b>",
+        parse_mode="HTML", reply_markup=kb_admin_main())
 
-@bot.callback_query_handler(func=lambda c: c.data.startswith("adm:"))
-def cb_admin(call):
+@bot.callback_query_handler(func=lambda c: c.data == "adm_stats")
+def cb_adm_stats(call):
     if not is_admin(call):
-        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True)
-        return
-
-    action = call.data.split(":")[1]
-    data   = load_data()
-
-    # ── СТАТИСТИКА ─────────────────────────────────────
-    if action == "stats":
-        total_users  = len(data["users"])
-        active_users = sum(1 for uid in data["users"] if is_subscribed(data, uid))
-        total_codes  = len(data["codes"])
-        used_codes   = sum(1 for c in data["codes"].values() if c["used"])
-        free_codes   = sum(1 for c in data["codes"].values() if not c["used"])
-
-        # Разбивка по дням
-        breakdown = {}
-        for uid, u in data["users"].items():
-            if is_subscribed(data, uid):
-                code = u.get("activated_code", "")
-                days = data["codes"].get(code, {}).get("days", 0)
-                breakdown[days] = breakdown.get(days, 0) + 1
-
-        bd_text = "\n".join(f"  • {d} dni: {n} os." for d, n in sorted(breakdown.items())) or "  —"
-
-        bot.edit_message_text(
-            f"📊 <b>Statystyki</b>\n\n"
-            f"👥 Wszystkich użytkowników: <b>{total_users}</b>\n"
-            f"✅ Aktywnych subskrypcji: <b>{active_users}</b>\n\n"
-            f"🔑 Wszystkich kodów: <b>{total_codes}</b>\n"
-            f"  ✅ Użytych: <b>{used_codes}</b>\n"
-            f"  🟡 Dostępnych: <b>{free_codes}</b>\n\n"
-            f"📅 Aktywne wg planu:\n{bd_text}",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("◀️ Wróć", callback_data="adm:back")
-            )
-        )
-
-    # ── СПИСОК ПОЛЬЗОВАТЕЛЕЙ ───────────────────────────
-    elif action == "users":
-        if not data["users"]:
-            text = "👥 Brak użytkowników."
-        else:
-            lines = []
-            for uid, u in list(data["users"].items())[-20:]:  # последние 20
-                uname = "@" + u.get("username") if u.get("username") else u.get("first_name", uid)
-                if is_subscribed(data, uid):
-                    end = datetime.fromisoformat(u["subscription_end"]).strftime("%d.%m.%Y")
-                    dl  = days_left(data, uid)
-                    lines.append(f"✅ {uname} — до {end} ({dl}d)")
-                else:
-                    lines.append(f"❌ {uname} — wygasła")
-            text = "👥 <b>Użytkownicy (ostatnie 20):</b>\n\n" + "\n".join(lines)
-
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("◀️ Wróć", callback_data="adm:back")
-            )
-        )
-
-    # ── СПИСОК КОДОВ ───────────────────────────────────
-    elif action == "codes":
-        if not data["codes"]:
-            text = "🔑 Brak kodów."
-        else:
-            lines = []
-            for code, c in list(data["codes"].items())[-30:]:  # последние 30
-                status = f"✅ użyty przez {c.get('used_by','?')}" if c["used"] else f"🟡 wolny — {c['days']}d"
-                lines.append(f"<code>{code}</code> {status}")
-            text = "🔑 <b>Kody (ostatnie 30):</b>\n\n" + "\n".join(lines)
-
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("◀️ Wróć", callback_data="adm:back")
-            )
-        )
-
-    # ── СОЗДАТЬ НОВЫЙ КОД ──────────────────────────────
-    elif action == "newcode":
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("🎁 7 dni",  callback_data="adm:gen:7"),
-            InlineKeyboardButton("📅 14 dni", callback_data="adm:gen:14"),
-            InlineKeyboardButton("📅 30 dni", callback_data="adm:gen:30"),
-            InlineKeyboardButton("📅 60 dni", callback_data="adm:gen:60"),
-            InlineKeyboardButton("📅 90 dni", callback_data="adm:gen:90"),
-        )
-        kb.add(InlineKeyboardButton("◀️ Wróć", callback_data="adm:back"))
-        bot.edit_message_text(
-            "➕ <b>Wybierz długość kodu:</b>",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=kb
-        )
-
-    # ── ГЕНЕРАЦИЯ КОДА ─────────────────────────────────
-    elif action.startswith("gen:"):
-        days  = int(action.split(":")[1])
-        code  = gen_code()
-        while code in data["codes"]:
-            code = gen_code()
-
-        data["codes"][code] = {
-            "days":       days,
-            "used":       False,
-            "used_by":    None,
-            "used_at":    None,
-            "created_at": datetime.now().isoformat()
-        }
-        save_data(data)
-
-        bot.edit_message_text(
-            f"✅ <b>Nowy kod wygenerowany!</b>\n\n"
-            f"🔑 Kod: <code>{code}</code>\n"
-            f"📅 Ważny: <b>{days} dni</b>\n\n"
-            f"Wyślij ten kod użytkownikowi.",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup().add(
-                InlineKeyboardButton("➕ Kolejny kod", callback_data="adm:newcode"),
-                InlineKeyboardButton("◀️ Menu",        callback_data="adm:back")
-            )
-        )
-
-    # ── НАЗАД ──────────────────────────────────────────
-    elif action == "back":
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("➕ Nowy kod",    callback_data="adm:newcode"),
-            InlineKeyboardButton("📋 Lista kodów", callback_data="adm:codes"),
-            InlineKeyboardButton("👥 Użytkownicy", callback_data="adm:users"),
-            InlineKeyboardButton("📊 Statystyki",  callback_data="adm:stats"),
-        )
-        bot.edit_message_text(
-            "⚙️ <b>Panel Admina</b>",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="HTML",
-            reply_markup=kb
-        )
-
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    data = load_data()
+    total  = len(data["users"])
+    active = sum(1 for u in data["users"] if is_subscribed(data, u))
+    codes  = len(data["codes"])
+    used   = sum(1 for c in data["codes"].values() if c["used"])
+    free   = codes - used
+    breakdown = {}
+    for uid in data["users"]:
+        if is_subscribed(data, uid):
+            code = data["users"][uid].get("activated_code","")
+            days = data["codes"].get(code,{}).get("days",0)
+            breakdown[days] = breakdown.get(days,0) + 1
+    bd = "\n".join(f"  • {d} dni: {n}" for d,n in sorted(breakdown.items())) or "  —"
+    bot.edit_message_text(
+        f"📊 <b>Statystyki</b>\n\n"
+        f"👥 Użytkownicy: <b>{total}</b>\n"
+        f"✅ Aktywne sub: <b>{active}</b>\n\n"
+        f"🔑 Kody łącznie: <b>{codes}</b>\n"
+        f"  ✅ Użyte: <b>{used}</b>\n"
+        f"  🟡 Wolne: <b>{free}</b>\n\n"
+        f"📅 Aktywne wg planu:\n{bd}",
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back"))
+    )
     bot.answer_callback_query(call.id)
 
-# ╔══════════════════════════════════════════════════════╗
-#   /help
-# ╚══════════════════════════════════════════════════════╝
+@bot.callback_query_handler(func=lambda c: c.data == "adm_users")
+def cb_adm_users(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    data = load_data()
+    if not data["users"]:
+        text = "👥 Brak użytkowników."
+    else:
+        lines = []
+        for uid, u in list(data["users"].items())[-25:]:
+            uname = "@"+u["username"] if u.get("username") else u.get("first_name", f"id{uid}")
+            if is_subscribed(data, uid):
+                end = datetime.fromisoformat(u["subscription_end"]).strftime("%d.%m")
+                lines.append(f"✅ {uname} — до {end} ({days_left(data,uid)}d)")
+            else:
+                lines.append(f"❌ {uname} — wygasła")
+        text = "👥 <b>Użytkownicy:</b>\n\n" + "\n".join(lines)
+    bot.edit_message_text(text,
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back")))
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_codes")
+def cb_adm_codes(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    data = load_data()
+    if not data["codes"]:
+        text = "🔑 Brak kodów."
+    else:
+        lines = []
+        for code, c in list(data["codes"].items())[-30:]:
+            status = f"✅ użyty" if c["used"] else f"🟡 wolny"
+            lines.append(f"<code>{code}</code> — {c['days']}d {status}")
+        text = "🔑 <b>Kody:</b>\n\n" + "\n".join(lines)
+    bot.edit_message_text(text,
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back")))
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_newcode")
+def cb_adm_newcode(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    kb = InlineKeyboardMarkup(row_width=3)
+    kb.add(
+        InlineKeyboardButton("7 dni",  callback_data="adm_gen_7"),
+        InlineKeyboardButton("14 dni", callback_data="adm_gen_14"),
+        InlineKeyboardButton("30 dni", callback_data="adm_gen_30"),
+        InlineKeyboardButton("60 dni", callback_data="adm_gen_60"),
+        InlineKeyboardButton("90 dni", callback_data="adm_gen_90"),
+    )
+    kb.add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back"))
+    bot.edit_message_text("➕ <b>Wybierz długość kodu:</b>",
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        parse_mode="HTML", reply_markup=kb)
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm_gen_"))
+def cb_adm_gen(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    days = int(call.data.replace("adm_gen_", ""))
+    data = load_data()
+    code = gen_code()
+    while code in data["codes"]:
+        code = gen_code()
+    data["codes"][code] = {
+        "days": days, "used": False,
+        "used_by": None, "used_at": None,
+        "created_at": datetime.now().isoformat()
+    }
+    save_data(data)
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("➕ Kolejny kod", callback_data="adm_newcode"),
+        InlineKeyboardButton("◀️ Menu",        callback_data="adm_back")
+    )
+    bot.edit_message_text(
+        f"✅ <b>Kod wygenerowany!</b>\n\n"
+        f"🔑 <code>{code}</code>\n"
+        f"📅 Ważny: <b>{days} dni</b>",
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        parse_mode="HTML", reply_markup=kb)
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_back")
+def cb_adm_back(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    bot.edit_message_text("⚙️ <b>Panel Admina</b>",
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        parse_mode="HTML", reply_markup=kb_admin_main())
+    bot.answer_callback_query(call.id)
+
+# ── /help ─────────────────────────────────────────────────
 
 @bot.message_handler(commands=["help"])
 def cmd_help(message):
-    bot.send_message(
-        message.chat.id,
+    bot.send_message(message.chat.id,
         "ℹ️ <b>Pomoc MinesPredictor</b>\n\n"
         "• /start — uruchom bota\n"
-        "• /activate KOD — aktywuj subskrypcję kodem\n"
+        "• /activate KOD — aktywuj subskrypcję\n"
         "• /help — ta wiadomość\n\n"
-        "Aby zakupić subskrypcję: @rmpl13",
-        parse_mode="HTML"
-    )
+        "Zakup subskrypcji: @rmpl13",
+        parse_mode="HTML")
 
-# ╔══════════════════════════════════════════════════════╗
-#   ЗАПУСК
-# ╚══════════════════════════════════════════════════════╝
+# ── RUN ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("MinesPredictor bot uruchomiony...")
