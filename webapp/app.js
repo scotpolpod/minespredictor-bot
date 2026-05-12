@@ -15,7 +15,7 @@ const CRYSTAL_EMOJI  = '💎';
 const MINE_EMOJI     = '💣';
 const OPTIMIZE_KEY   = 'mp_last_optimize';
 const SIGNAL_LIMIT   = 5;
-const SIGNAL_KEY     = 'mp_signals_';
+const SIGNAL_KEY     = 'mp_signals_v2_';
 
 // Параметры только из URL — localStorage не используется как fallback для безопасности
 const _params = new URLSearchParams(window.location.search);
