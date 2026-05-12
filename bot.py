@@ -267,9 +267,11 @@ def cmd_activate(message):
 
 @bot.message_handler(func=lambda m: user_state.get(m.from_user.id) == "entering_code")
 def msg_code(message):
-    process_code(message.from_user.id, message.text.strip().upper(), message.chat.id)
+    u = message.from_user
+    process_code(u.id, message.text.strip().upper(), message.chat.id,
+                 username=u.username or "", first_name=u.first_name or "")
 
-def process_code(uid, code, chat_id):
+def process_code(uid, code, chat_id, username="", first_name=""):
     data = load_data()
 
     if is_subscribed(data, uid):
@@ -308,9 +310,10 @@ def process_code(uid, code, chat_id):
         "subscription_end": end,
         "activated_code":   code,
         "activated_at":     datetime.now().isoformat(),
-        "username":         existing.get("username", ""),
-        "first_name":       existing.get("first_name", ""),
-        "player_id":        player_id
+        "username":         username or existing.get("username", ""),
+        "first_name":       first_name or existing.get("first_name", ""),
+        "player_id":        player_id,
+        "tg_id":            uid
     }
     save_data(data)
 
@@ -352,9 +355,12 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    # Zapisz player_id
+    # Zapisz player_id + dane użytkownika
     if str(uid) in data["users"]:
-        data["users"][str(uid)]["player_id"] = player_id
+        data["users"][str(uid)]["player_id"]  = player_id
+        data["users"][str(uid)]["tg_id"]      = uid
+        data["users"][str(uid)]["username"]   = message.from_user.username or data["users"][str(uid)].get("username", "")
+        data["users"][str(uid)]["first_name"] = message.from_user.first_name or data["users"][str(uid)].get("first_name", "")
         save_data(data)
 
     dl  = days_left(data, uid)
@@ -380,7 +386,9 @@ def handle_webapp_data(message):
     if payload.get('type') == 'activate_code':
         code = payload.get('code', '').strip().upper()
         if code:
-            process_code(uid, code, message.chat.id)
+            u = message.from_user
+            process_code(uid, code, message.chat.id,
+                         username=u.username or "", first_name=u.first_name or "")
 
 @bot.callback_query_handler(func=lambda c: c.data == "change_id")
 def cb_change_id(call):
@@ -470,14 +478,28 @@ def cb_adm_users(call):
         text = "👥 Brak użytkowników."
     else:
         lines = []
-        for uid, u in list(data["users"].items())[-25:]:
-            uname = "@"+u["username"] if u.get("username") else u.get("first_name", f"id{uid}")
-            if is_subscribed(data, uid):
-                end = datetime.fromisoformat(u["subscription_end"]).strftime("%d.%m")
-                lines.append(f"✅ {uname} — до {end} ({days_left(data,uid)}d)")
+        for uid, u in list(data["users"].items())[-20:]:
+            # Telegram identity
+            if u.get("username"):
+                tg_name = f"@{u['username']}"
+            elif u.get("first_name"):
+                tg_name = u["first_name"]
             else:
-                lines.append(f"❌ {uname} — wygasła")
-        text = "👥 <b>Użytkownicy:</b>\n\n" + "\n".join(lines)
+                tg_name = f"id{uid}"
+            tg_id     = u.get("tg_id") or uid
+            player_id = u.get("player_id") or "—"
+
+            if is_subscribed(data, uid):
+                end    = datetime.fromisoformat(u["subscription_end"]).strftime("%d.%m.%y")
+                status = f"✅ до {end} ({days_left(data,uid)}d)"
+            else:
+                status = "❌ wygasła"
+
+            lines.append(
+                f"<b>{tg_name}</b> <code>{tg_id}</code>\n"
+                f"🎰 <code>{player_id}</code> | {status}"
+            )
+        text = f"👥 <b>Użytkownicy ({len(data['users'])}):</b>\n\n" + "\n\n".join(lines)
     bot.edit_message_text(text,
         chat_id=call.message.chat.id, message_id=call.message.message_id,
         parse_mode="HTML",
