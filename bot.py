@@ -646,10 +646,26 @@ def msg_broadcast(message):
     user_state.pop(uid, None)
     if not text:
         return
+    _do_broadcast(uid, text)
+
+@bot.message_handler(commands=["send"])
+def cmd_send(message):
+    if not is_admin(message):
+        return
+    text = message.text.partition(" ")[2].strip()
+    if not text:
+        bot.send_message(message.chat.id, "⚠️ Użycie: /send Twoja wiadomość tutaj")
+        return
+    _do_broadcast(message.from_user.id, text)
+
+def _do_broadcast(uid, text):
     bot.send_message(uid, "📢 <b>Wysyłam...</b>", parse_mode="HTML")
     def do_send():
-        sent = send_push_to_all(text)
-        bot.send_message(uid, f"✅ Wysłano do <b>{sent}</b> subskrybentów.", parse_mode="HTML")
+        try:
+            sent = send_push_to_all(text)
+            bot.send_message(uid, f"✅ Wysłano do <b>{sent}</b> subskrybentów.", parse_mode="HTML")
+        except Exception as e:
+            bot.send_message(uid, f"❌ Błąd: {e}", parse_mode="HTML")
     threading.Thread(target=do_send, daemon=True).start()
 
 # ── /help ─────────────────────────────────────────────────
