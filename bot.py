@@ -2,6 +2,8 @@ import os
 import json
 import random
 import string
+import threading
+import time
 from datetime import datetime, timedelta
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -38,7 +40,18 @@ PLANS = [
     {"label": "📅 90 dni",       "days": 90, "price": "849 zł"},
 ]
 
-user_state = {}  # uid -> 'entering_id' | 'entering_code'
+user_state = {}  # uid -> 'entering_id' | 'entering_code' | 'entering_broadcast'
+
+# Времена авто-пушей (HH:MM, по UTC+2 — меняй под нужный TZ)
+PUSH_TIMES = ["07:00", "12:00", "17:00"]
+
+PUSH_MESSAGES = [
+    "🔄 <b>Algorytm zaktualizowany!</b>\n\nDzisiejsze sygnały są gotowe — sprawdź przewidywania i zacznij wygrywać 💎",
+    "⚡ <b>Uwaga!</b>\n\nDziś algorytm wykrył wyjątkowo wysoką skuteczność predykcji. Nie przegap okazji — sygnały czekają 🎯",
+    "🌙 <b>Wieczorna sesja startuje!</b>\n\nAlgorytm przeanalizował wzorce — Twoje sygnały są gotowe 📡",
+    "💰 <b>Nasi gracze dziś już zbierają!</b>\n\nAlgorytm pracuje na pełnych obrotach — Twoje sygnały czekają 🚀",
+    "👋 <b>Hej!</b>\n\nAlgorytm non-stop analizuje wzorce i ma dla Ciebie gotowe sygnały na dziś 💎 Wejdź teraz",
+]
 
 # ── DATA ──────────────────────────────────────────────────
 
@@ -88,6 +101,42 @@ def is_admin(obj):
 def gen_code():
     return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
+# ── BROADCAST ─────────────────────────────────────────────
+
+def send_push_to_all(text):
+    data  = load_data()
+    users = data.get("users", {})
+    sent  = 0
+    for uid_str in list(users.keys()):
+        if not is_subscribed(data, uid_str):
+            continue
+        try:
+            bot.send_message(int(uid_str), text, parse_mode="HTML")
+            sent += 1
+            time.sleep(0.05)   # защита от flood
+        except Exception as e:
+            print(f"Push error uid={uid_str}: {e}")
+    print(f"Push wysłany: {sent} użytkowników.")
+    return sent
+
+def push_scheduler():
+    sent_today = {}
+    while True:
+        try:
+            now  = datetime.now()
+            hm   = now.strftime("%H:%M")
+            date = now.strftime("%Y-%m-%d")
+            if sent_today.get("_date") != date:
+                sent_today = {"_date": date}
+            for push_time in PUSH_TIMES:
+                if hm == push_time and push_time not in sent_today:
+                    sent_today[push_time] = True
+                    msg = random.choice(PUSH_MESSAGES)
+                    threading.Thread(target=send_push_to_all, args=(msg,), daemon=True).start()
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+        time.sleep(60)
+
 # ── KEYBOARDS ─────────────────────────────────────────────
 
 def kb_plans():
@@ -117,6 +166,7 @@ def kb_admin_main():
         InlineKeyboardButton("👥 Użytkownicy", callback_data="adm_users"),
         InlineKeyboardButton("📊 Statystyki",  callback_data="adm_stats"),
     )
+    kb.add(InlineKeyboardButton("📢 Wyślij push", callback_data="adm_push"))
     return kb
 
 # ── /start ────────────────────────────────────────────────
@@ -511,6 +561,75 @@ def cb_adm_back(call):
         print(f"cb_adm_back error: {e}")
     bot.answer_callback_query(call.id)
 
+# ── ADMIN PUSH ────────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_push")
+def cb_adm_push(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    kb = InlineKeyboardMarkup()
+    for i, msg in enumerate(PUSH_MESSAGES):
+        preview = msg.replace("<b>","").replace("</b>","")[:45] + "..."
+        kb.add(InlineKeyboardButton(preview, callback_data=f"adm_ps_{i}"))
+    kb.add(InlineKeyboardButton("✏️ Własna wiadomość", callback_data="adm_push_custom"))
+    kb.add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back"))
+    try:
+        bot.edit_message_text("📢 <b>Wybierz wiadomość push:</b>",
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        print(f"cb_adm_push error: {e}")
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm_ps_"))
+def cb_adm_push_send(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    try:
+        idx = int(call.data.replace("adm_ps_", ""))
+        msg = PUSH_MESSAGES[idx]
+    except Exception as e:
+        bot.answer_callback_query(call.id, "Błąd.", show_alert=True); return
+    threading.Thread(target=send_push_to_all, args=(msg,), daemon=True).start()
+    try:
+        bot.edit_message_text("📢 <b>Push wysyłany!</b>\n\nWiadomość dotrze do wszystkich aktywnych subskrybentów.",
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Menu", callback_data="adm_back")))
+    except Exception as e:
+        print(f"cb_adm_push_send error: {e}")
+    bot.answer_callback_query(call.id)
+
+@bot.callback_query_handler(func=lambda c: c.data == "adm_push_custom")
+def cb_adm_push_custom(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    user_state[call.from_user.id] = "entering_broadcast"
+    try:
+        bot.edit_message_text(
+            "✏️ <b>Wpisz treść wiadomości:</b>\n\nObsługuje HTML: &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;",
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Anuluj", callback_data="adm_back")))
+    except Exception as e:
+        print(f"cb_adm_push_custom error: {e}")
+    bot.answer_callback_query(call.id)
+
+@bot.message_handler(func=lambda m: user_state.get(m.from_user.id) == "entering_broadcast")
+def msg_broadcast(message):
+    if not is_admin(message):
+        return
+    uid  = message.from_user.id
+    text = message.text.strip()
+    user_state.pop(uid, None)
+    if not text:
+        return
+    bot.send_message(uid, "📢 <b>Wysyłam...</b>", parse_mode="HTML")
+    def do_send():
+        sent = send_push_to_all(text)
+        bot.send_message(uid, f"✅ Wysłano do <b>{sent}</b> subskrybentów.", parse_mode="HTML")
+    threading.Thread(target=do_send, daemon=True).start()
+
 # ── /help ─────────────────────────────────────────────────
 
 @bot.message_handler(commands=["help"])
@@ -526,8 +645,9 @@ def cmd_help(message):
 # ── RUN ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import time
     print("MinesPredictor bot uruchomiony...")
+    threading.Thread(target=push_scheduler, daemon=True).start()
+    print("Scheduler uruchomiony.")
 
     try:
         bot.delete_webhook(drop_pending_updates=True)
