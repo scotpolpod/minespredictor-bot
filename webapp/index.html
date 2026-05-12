@@ -52,13 +52,13 @@
   <div id="page-mines" class="page">
 
     <section class="difficulty-section">
-      <label>Poziom trudności: <span id="diff-label">5</span> min</label>
+      <label>Poziom trudności: <span id="diff-label">3</span> min</label>
       <div class="slider-wrap">
-        <span>3</span>
-        <input type="range" id="difficulty" min="3" max="10" value="5"
+        <span>1</span>
+        <input type="range" id="difficulty" min="1" max="6" value="3"
                oninput="document.getElementById('diff-label').textContent=this.value"
                onchange="document.getElementById('diff-label').textContent=this.value" />
-        <span>10</span>
+        <span>6</span>
       </div>
     </section>
 
@@ -77,6 +77,7 @@
         <span class="btn-icon">📡</span>
         Pobierz Sygnał
       </button>
+      <div class="signal-counter" id="signal-counter-mines"></div>
     </section>
 
     <section class="stats-section">
@@ -120,7 +121,6 @@
       <div class="pen-diff-btns">
         <button class="pen-diff-btn active" onclick="setPenDiff(this,'Łatwy',2)">Łatwy</button>
         <button class="pen-diff-btn" onclick="setPenDiff(this,'Średni',4)">Średni</button>
-        <button class="pen-diff-btn" onclick="setPenDiff(this,'Trudny',7)">Trudny</button>
       </div>
     </section>
 
@@ -147,6 +147,7 @@
         <span class="btn-icon">📡</span>
         Pobierz Sygnał
       </button>
+      <div class="signal-counter" id="signal-counter-penalty"></div>
     </section>
 
     <section class="stats-section">
@@ -224,6 +225,6 @@
 
 </div><!-- /main-screen -->
 
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
