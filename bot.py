@@ -181,7 +181,7 @@ def cmd_start(message):
         dl        = days_left(data, uid)
         player_id = data["users"].get(str(uid), {}).get("player_id", "")
         if player_id:
-            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
@@ -278,7 +278,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
         dl        = days_left(data, uid)
         player_id = data["users"].get(str(uid), {}).get("player_id", "")
         if player_id:
-            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
             bot.send_message(chat_id,
                 f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.",
                 parse_mode="HTML", reply_markup=kb_open_app(url))
@@ -321,7 +321,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
 
     if player_id:
         dl  = days_left(data, uid)
-        url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+        url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
         user_state[uid] = None
         bot.send_message(chat_id,
             f"🎉 Subskrypcja aktywowana!\n\n"
@@ -364,7 +364,7 @@ def msg_id(message):
         save_data(data)
 
     dl  = days_left(data, uid)
-    url = f"{WEBAPP_URL}?uid={player_id}&days={dl}"
+    url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
     user_state[uid] = None
 
     bot.send_message(uid,
