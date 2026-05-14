@@ -393,12 +393,35 @@ def handle_webapp_data(message):
     except Exception as e:
         print(f"webapp_data parse error: {e}")
         return
+
     if payload.get('type') == 'activate_code':
         code = payload.get('code', '').strip().upper()
         if code:
             u = message.from_user
             process_code(uid, code, message.chat.id,
                          username=u.username or "", first_name=u.first_name or "")
+
+    elif payload.get('type') == 'win':
+        game = payload.get('game', 'mines')
+        data = load_data()
+        user = data["users"].get(str(uid), {})
+        key  = f"wins_{game}"
+        user[key] = user.get(key, 0) + 1
+        wins_mines   = user.get("wins_mines", 0)
+        wins_penalty = user.get("wins_penalty", 0)
+        wins_total   = wins_mines + wins_penalty
+        data["users"][str(uid)] = user
+        save_data(data)
+        game_name = "Mines 💎" if game == "mines" else "Penalty ⚽"
+        bot.send_message(uid,
+            f"🎉 <b>Gratulacje! Wygrałeś!</b>\n\n"
+            f"🎮 Gra: <b>{game_name}</b>\n\n"
+            f"📊 <b>Twoje statystyki:</b>\n"
+            f"💎 Mines: <b>{wins_mines}</b> wygranych\n"
+            f"⚽ Penalty: <b>{wins_penalty}</b> wygranych\n"
+            f"🏆 Łącznie: <b>{wins_total}</b> wygranych\n\n"
+            f"Tak trzymaj! Algorytm działa 🚀",
+            parse_mode="HTML")
 
 @bot.callback_query_handler(func=lambda c: c.data == "change_id")
 def cb_change_id(call):
@@ -677,6 +700,26 @@ def _do_broadcast(uid, text):
         except Exception as e:
             bot.send_message(uid, f"❌ Błąd: {e}", parse_mode="HTML")
     threading.Thread(target=do_send, daemon=True).start()
+
+# ── /statystyki ───────────────────────────────────────────
+
+@bot.message_handler(commands=["statystyki"])
+def cmd_statystyki(message):
+    uid  = message.from_user.id
+    data = load_data()
+    user = data["users"].get(str(uid), {})
+    wins_mines   = user.get("wins_mines", 0)
+    wins_penalty = user.get("wins_penalty", 0)
+    wins_total   = wins_mines + wins_penalty
+    dl = days_left(data, uid)
+    sub_str = f"✅ Aktywna — {dl} dni" if is_subscribed(data, uid) else "❌ Brak subskrypcji"
+    bot.send_message(uid,
+        f"📊 <b>Twoje statystyki</b>\n\n"
+        f"🏆 Łącznie wygranych: <b>{wins_total}</b>\n"
+        f"💎 Mines: <b>{wins_mines}</b>\n"
+        f"⚽ Penalty: <b>{wins_penalty}</b>\n\n"
+        f"🔑 Subskrypcja: {sub_str}",
+        parse_mode="HTML")
 
 # ── /help ─────────────────────────────────────────────────
 
