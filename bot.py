@@ -106,7 +106,7 @@ def is_vip(username):
 
 def build_url(player_id, dl, username=""):
     vip = "&vip=1" if is_vip(username) else ""
-    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5{vip}"
+    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}"
 
 def gen_code():
     return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
