@@ -44,7 +44,7 @@ PLANS = [
 user_state = {}  # uid -> 'entering_id' | 'entering_code' | 'entering_broadcast'
 
 # Времена авто-пушей (HH:MM, по UTC+2 — меняй под нужный TZ)
-PUSH_TIMES = ["07:00", "12:00", "17:00"]
+PUSH_TIMES = ["12:00"]
 
 INACTIVE_DAYS   = 3          # через сколько дней без активности слать пуш
 INACTIVE_CHECK  = "11:00"    # время проверки каждый день
