@@ -165,8 +165,9 @@ def send_inactive_push():
     for uid_str, user in list(data["users"].items()):
         if not is_subscribed(data, uid_str):
             continue
-        # не слать дважды в один день
-        if user.get("inactive_push_date") == today:
+        # не слать чаще раза в 3 дня
+        last_push = user.get("inactive_push_date")
+        if last_push and (now - datetime.fromisoformat(last_push)).days < 3:
             continue
         last = user.get("last_activity")
         if not last:
@@ -184,17 +185,13 @@ def send_inactive_push():
                 kb.add(InlineKeyboardButton("🚀 Otwórz MinesPredictor", web_app=WebAppInfo(url=url)))
             bot.send_message(int(uid_str), INACTIVE_MESSAGE, parse_mode="HTML",
                              reply_markup=kb if player_id else None)
-            user["inactive_push_date"] = today
+            user["inactive_push_date"] = now.isoformat()
             sent += 1
             time.sleep(0.05)
         except Exception as e:
             print(f"Inactive push error uid={uid_str}: {e}")
     if sent:
-        data_fresh = load_data()
-        for uid_str, user in list(data["users"].items()):
-            if user.get("inactive_push_date") == today:
-                data_fresh["users"][uid_str]["inactive_push_date"] = today
-        save_data(data_fresh)
+        save_data(data)
     print(f"Inactive push wysłany: {sent} użytkowników.")
 
 def inactive_scheduler():
