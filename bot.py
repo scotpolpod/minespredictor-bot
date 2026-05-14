@@ -16,6 +16,7 @@ WEBAPP_URL     = os.getenv("WEBAPP_URL")
 ADMIN_USERNAME = "rmpl13"
 MANAGER_LINK   = "https://t.me/rmpl13"
 DATA_FILE      = "data.json"
+VIP_USERNAMES  = ["iiiiiigggggg", "S_V_V1"]
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -97,6 +98,15 @@ def days_left(data, uid):
 def is_admin(obj):
     u = obj.from_user.username
     return u and u.lower() == ADMIN_USERNAME.lower()
+
+def is_vip(username):
+    if not username:
+        return False
+    return username.lower() in [v.lower() for v in VIP_USERNAMES]
+
+def build_url(player_id, dl, username=""):
+    vip = "&vip=1" if is_vip(username) else ""
+    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5{vip}"
 
 def gen_code():
     return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -181,7 +191,7 @@ def cmd_start(message):
         dl        = days_left(data, uid)
         player_id = data["users"].get(str(uid), {}).get("player_id", "")
         if player_id:
-            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
+            url = build_url(player_id, dl, message.from_user.username if hasattr(message, 'from_user') else "")
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
@@ -278,7 +288,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
         dl        = days_left(data, uid)
         player_id = data["users"].get(str(uid), {}).get("player_id", "")
         if player_id:
-            url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
+            url = build_url(player_id, dl, username)
             bot.send_message(chat_id,
                 f"✅ Masz już aktywną subskrypcję — pozostało <b>{dl} dni</b>.",
                 parse_mode="HTML", reply_markup=kb_open_app(url))
@@ -321,7 +331,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
 
     if player_id:
         dl  = days_left(data, uid)
-        url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
+        url = build_url(player_id, dl, username)
         user_state[uid] = None
         bot.send_message(chat_id,
             f"🎉 Subskrypcja aktywowana!\n\n"
@@ -364,7 +374,7 @@ def msg_id(message):
         save_data(data)
 
     dl  = days_left(data, uid)
-    url = f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=5"
+    url = build_url(player_id, dl, message.from_user.username if hasattr(message, 'from_user') else "")
     user_state[uid] = None
 
     bot.send_message(uid,
