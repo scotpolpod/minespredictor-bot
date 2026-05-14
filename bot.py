@@ -46,6 +46,16 @@ user_state = {}  # uid -> 'entering_id' | 'entering_code' | 'entering_broadcast'
 # Времена авто-пушей (HH:MM, по UTC+2 — меняй под нужный TZ)
 PUSH_TIMES = ["07:00", "12:00", "17:00"]
 
+INACTIVE_DAYS   = 3          # через сколько дней без активности слать пуш
+INACTIVE_CHECK  = "11:00"    # время проверки каждый день
+
+INACTIVE_MESSAGE = (
+    "⚡ <b>Dawno Cię nie było!</b>\n\n"
+    "Przez ostatnie dni algorytm zebrał nowe dane i znacznie poprawił "
+    "dokładność predykcji.\n\n"
+    "Twoje sygnały czekają — wejdź teraz i sprawdź 🎯"
+)
+
 PUSH_MESSAGES = [
     "🔄 <b>Algorytm zaktualizowany!</b>\n\nDzisiejsze sygnały są gotowe — sprawdź przewidywania i zacznij wygrywać 💎",
     "⚡ <b>Uwaga!</b>\n\nDziś algorytm wykrył wyjątkowo wysoką skuteczność predykcji. Nie przegap okazji — sygnały czekają 🎯",
@@ -147,6 +157,62 @@ def push_scheduler():
             print(f"Scheduler error: {e}")
         time.sleep(60)
 
+def send_inactive_push():
+    data  = load_data()
+    now   = datetime.now()
+    sent  = 0
+    today = now.strftime("%Y-%m-%d")
+    for uid_str, user in list(data["users"].items()):
+        if not is_subscribed(data, uid_str):
+            continue
+        # не слать дважды в один день
+        if user.get("inactive_push_date") == today:
+            continue
+        last = user.get("last_activity")
+        if not last:
+            continue
+        diff = (now - datetime.fromisoformat(last)).days
+        if diff < INACTIVE_DAYS:
+            continue
+        player_id = user.get("player_id", "")
+        dl        = days_left(data, uid_str)
+        username  = user.get("username", "")
+        try:
+            kb = InlineKeyboardMarkup()
+            if player_id:
+                url = build_url(player_id, dl, username)
+                kb.add(InlineKeyboardButton("🚀 Otwórz MinesPredictor", web_app=WebAppInfo(url=url)))
+            bot.send_message(int(uid_str), INACTIVE_MESSAGE, parse_mode="HTML",
+                             reply_markup=kb if player_id else None)
+            user["inactive_push_date"] = today
+            sent += 1
+            time.sleep(0.05)
+        except Exception as e:
+            print(f"Inactive push error uid={uid_str}: {e}")
+    if sent:
+        data_fresh = load_data()
+        for uid_str, user in list(data["users"].items()):
+            if user.get("inactive_push_date") == today:
+                data_fresh["users"][uid_str]["inactive_push_date"] = today
+        save_data(data_fresh)
+    print(f"Inactive push wysłany: {sent} użytkowników.")
+
+def inactive_scheduler():
+    sent_today = {}
+    while True:
+        try:
+            now  = datetime.now()
+            hm   = now.strftime("%H:%M")
+            date = now.strftime("%Y-%m-%d")
+            if sent_today.get("_date") != date:
+                sent_today = {"_date": date}
+            if hm == INACTIVE_CHECK and "done" not in sent_today:
+                sent_today["done"] = True
+                threading.Thread(target=send_inactive_push, daemon=True).start()
+        except Exception as e:
+            print(f"Inactive scheduler error: {e}")
+        time.sleep(60)
+
 # ── KEYBOARDS ─────────────────────────────────────────────
 
 def kb_plans():
@@ -181,10 +247,17 @@ def kb_admin_main():
 
 # ── /start ────────────────────────────────────────────────
 
+def touch_activity(uid, data):
+    """Обновляет last_activity юзера."""
+    if str(uid) in data["users"]:
+        data["users"][str(uid)]["last_activity"] = datetime.now().isoformat()
+
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
     uid  = message.from_user.id
     data = load_data()
+    touch_activity(uid, data)
+    save_data(data)
     user_state.pop(uid, None)
 
     if is_subscribed(data, uid):
@@ -320,6 +393,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
         "subscription_end": end,
         "activated_code":   code,
         "activated_at":     datetime.now().isoformat(),
+        "last_activity":    datetime.now().isoformat(),
         "username":         username or existing.get("username", ""),
         "first_name":       first_name or existing.get("first_name", ""),
         "player_id":        player_id,
@@ -738,7 +812,8 @@ def cmd_help(message):
 if __name__ == "__main__":
     print("MinesPredictor bot uruchomiony...")
     threading.Thread(target=push_scheduler, daemon=True).start()
-    print("Scheduler uruchomiony.")
+    threading.Thread(target=inactive_scheduler, daemon=True).start()
+    print("Schedulery uruchomione.")
 
     try:
         bot.delete_webhook(drop_pending_updates=True)
