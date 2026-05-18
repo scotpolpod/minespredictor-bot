@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 import telebot
+import requests as _requests
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from dotenv import load_dotenv
 
@@ -32,6 +33,93 @@ if REDIS_URL:
     except Exception as _e:
         print(f"Redis błąd połączenia: {_e}")
         _redis = None
+
+# ── SPINBETTER VERIFICATION ───────────────────────────────
+SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "")
+SPINBETTER_CUSTOMER = "casinoz"
+SPINBETTER_CACHE_KEY = "spinbetter_players"
+SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
+
+# in-memory fallback если Redis недоступен
+_sb_players_cache = set()
+
+def fetch_spinbetter_players():
+    """Загружает все ID игроков из SpinBetter Partners API."""
+    try:
+        payload = {
+            "dimensions": ["site_player_id"],
+            "filters": {},
+            "from": "2020-01-01 00:00:00",
+            "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
+            "having": {},
+            "limit": 100000,
+            "metrics": ["registrations_count"],
+            "metrics_format": "pretty",
+            "offset": 0,
+            "search": {},
+            "sorting": [{"sort_by": "site_player_id", "sort_dir": "desc"}],
+        }
+        headers = {
+            "Authorization": SPINBETTER_TOKEN,
+            "Content-Type":  "application/json",
+            "X-Customer-Id": SPINBETTER_CUSTOMER,
+            "Origin":        "https://panel.spinbetterpartners.com",
+            "Referer":       "https://panel.spinbetterpartners.com/",
+        }
+        resp = _requests.post(
+            "https://affiliatecontrol-api.com/affiliates/reports",
+            json=payload, headers=headers, timeout=20
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        players = set()
+        for item in data.get("payload", {}).get("data", []):
+            pid = item.get("site_player_id")
+            if pid and pid != "Незарегистрированный":
+                players.add(str(pid))
+        print(f"SpinBetter: загружено {len(players)} игроков.")
+        return players
+    except Exception as e:
+        print(f"SpinBetter fetch error: {e}")
+        return None
+
+def refresh_sb_cache():
+    """Обновляет кеш игроков SpinBetter."""
+    global _sb_players_cache
+    players = fetch_spinbetter_players()
+    if players is None:
+        return  # не обновляем при ошибке — оставляем старый кеш
+    _sb_players_cache = players
+    if _redis:
+        try:
+            _redis.set(SPINBETTER_CACHE_KEY, json.dumps(list(players)))
+        except Exception as e:
+            print(f"SpinBetter Redis save error: {e}")
+
+def is_valid_player(player_id):
+    """Проверяет что ID есть в партнёрке SpinBetter."""
+    if not SPINBETTER_TOKEN:
+        return True  # верификация отключена если токен не задан
+    pid = str(player_id).strip()
+    # сначала Redis кеш
+    if _redis:
+        try:
+            raw = _redis.get(SPINBETTER_CACHE_KEY)
+            if raw:
+                return pid in set(json.loads(raw))
+        except Exception:
+            pass
+    # fallback на in-memory
+    return pid in _sb_players_cache
+
+def sb_scheduler():
+    """Обновляет кеш игроков каждые 3 минуты."""
+    while True:
+        try:
+            refresh_sb_cache()
+        except Exception as e:
+            print(f"sb_scheduler error: {e}")
+        time.sleep(SPINBETTER_REFRESH)
 
 PLANS = [
     {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
@@ -436,6 +524,15 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
+    if not is_valid_player(player_id):
+        bot.send_message(uid,
+            "❌ <b>Nie znaleziono Twojego ID w naszej sieci partnerskiej.</b>\n\n"
+            "Upewnij się, że zarejestrowałeś się przez nasz link afiliacyjny.\n\n"
+            "Jeśli jesteś pewny że ID jest poprawne — spróbuj ponownie za kilka minut "
+            "(baza jest aktualizowana co 3 minuty).",
+            parse_mode="HTML")
+        return
+
     # Zapisz player_id + dane użytkownika
     if str(uid) in data["users"]:
         data["users"][str(uid)]["player_id"]  = player_id
@@ -810,6 +907,7 @@ if __name__ == "__main__":
     print("MinesPredictor bot uruchomiony...")
     threading.Thread(target=push_scheduler, daemon=True).start()
     threading.Thread(target=inactive_scheduler, daemon=True).start()
+    threading.Thread(target=sb_scheduler, daemon=True).start()
     print("Schedulery uruchomione.")
 
     try:
