@@ -41,10 +41,11 @@ SPINBETTER_CACHE_KEY = "spinbetter_players"
 SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
 
 # in-memory fallback если Redis недоступен
-_sb_players_cache = set()
+# {player_id: True/False} где True = есть депозит
+_sb_players_cache = {}
 
 def fetch_spinbetter_players():
-    """Загружает все ID игроков из SpinBetter Partners API."""
+    """Загружает игроков из SpinBetter. Возвращает dict {pid: has_deposit}."""
     try:
         payload = {
             "dimensions": ["site_player_id"],
@@ -53,7 +54,7 @@ def fetch_spinbetter_players():
             "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
             "having": {},
             "limit": 100000,
-            "metrics": ["registrations_count"],
+            "metrics": ["registrations_count", "deposits_first_count"],
             "metrics_format": "pretty",
             "offset": 0,
             "search": {},
@@ -72,48 +73,50 @@ def fetch_spinbetter_players():
         )
         resp.raise_for_status()
         data = resp.json()
-        players = set()
+        players = {}
         for item in data.get("payload", {}).get("data", []):
             pid = item.get("site_player_id")
-            if pid and pid != "Незарегистрированный":
-                players.add(str(pid))
-        print(f"SpinBetter: загружено {len(players)} игроков.")
+            if not pid or pid == "Незарегистрированный":
+                continue
+            has_dep = int(item.get("deposits_first_count") or 0) > 0
+            players[str(pid)] = has_dep
+        print(f"SpinBetter: {len(players)} players loaded.")
         return players
     except Exception as e:
         print(f"SpinBetter fetch error: {e}")
         return None
 
 def refresh_sb_cache():
-    """Обновляет кеш игроков SpinBetter."""
     global _sb_players_cache
     players = fetch_spinbetter_players()
     if players is None:
-        return  # не обновляем при ошибке — оставляем старый кеш
+        return
     _sb_players_cache = players
     if _redis:
         try:
-            _redis.set(SPINBETTER_CACHE_KEY, json.dumps(list(players)))
+            _redis.set(SPINBETTER_CACHE_KEY, json.dumps(players))
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-def is_valid_player(player_id):
-    """Проверяет что ID есть в партнёрке SpinBetter."""
+def check_player(player_id):
+    """Returns: 'not_found' | 'no_deposit' | 'ok'"""
     if not SPINBETTER_TOKEN:
-        return True  # верификация отключена если токен не задан
+        return "ok"
     pid = str(player_id).strip()
-    # сначала Redis кеш
+    players = _sb_players_cache
     if _redis:
         try:
             raw = _redis.get(SPINBETTER_CACHE_KEY)
             if raw:
-                return pid in set(json.loads(raw))
+                players = json.loads(raw)
         except Exception:
             pass
-    # fallback на in-memory
-    return pid in _sb_players_cache
+    if pid not in players:
+        return "not_found"
+    return "ok" if players[pid] else "no_deposit"
 
 def sb_scheduler():
-    """Обновляет кеш игроков каждые 3 минуты."""
+    """Updates SpinBetter cache every 3 minutes."""
     while True:
         try:
             refresh_sb_cache()
@@ -524,12 +527,20 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    if not is_valid_player(player_id):
+    sb_status = check_player(player_id)
+    if sb_status == "not_found":
         bot.send_message(uid,
             "❌ <b>Nie znaleziono Twojego ID w naszej sieci partnerskiej.</b>\n\n"
             "Upewnij się, że zarejestrowałeś się przez nasz link afiliacyjny.\n\n"
-            "Jeśli jesteś pewny że ID jest poprawne — spróbuj ponownie za kilka minut "
-            "(baza jest aktualizowana co 3 minuty).",
+            "Jeśli właśnie się zarejestrowałeś — spróbuj ponownie za kilka minut "
+            "(baza jest aktualizowana co 3 minuty) 🔄",
+            parse_mode="HTML")
+        return
+    if sb_status == "no_deposit":
+        bot.send_message(uid,
+            "✅ <b>Rejestracja potwierdzona!</b>\n\n"
+            "Aby odblokować dostęp do sygnałów — dokonaj pierwszej wpłaty w SpinBetter.\n\n"
+            "Po wpłacie wróć tutaj i wpisz swoje ID ponownie — dostęp zostanie przyznany automatycznie 🎯",
             parse_mode="HTML")
         return
 
