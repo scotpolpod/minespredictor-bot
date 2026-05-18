@@ -530,10 +530,9 @@ def msg_id(message):
     sb_status = check_player(player_id)
     if sb_status == "not_found":
         bot.send_message(uid,
-            "❌ <b>Nie znaleziono Twojego ID w naszej sieci partnerskiej.</b>\n\n"
-            "Upewnij się, że zarejestrowałeś się przez nasz link afiliacyjny.\n\n"
-            "Jeśli właśnie się zarejestrowałeś — spróbuj ponownie za kilka minut "
-            "(baza jest aktualizowana co 3 minuty) 🔄",
+            "❌ <b>Nie znaleziono takiego ID.</b>\n\n"
+            "Sprawdź czy wpisałeś poprawny numer — możesz go znaleźć w swoim profilu SpinBetter.\n\n"
+            "Jeśli właśnie założyłeś konto — poczekaj chwilę i spróbuj ponownie 🔄",
             parse_mode="HTML")
         return
     if sb_status == "no_deposit":
