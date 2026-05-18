@@ -44,10 +44,10 @@ PLANS = [
 user_state = {}  # uid -> 'entering_id' | 'entering_code' | 'entering_broadcast'
 
 # Времена авто-пушей (HH:MM, по UTC+2 — меняй под нужный TZ)
-PUSH_TIMES = ["12:00"]
+PUSH_TIMES = ["10:00"]  # 10:00 UTC = 12:00 czasu polskiego (UTC+2)
 
 INACTIVE_DAYS   = 3          # через сколько дней без активности слать пуш
-INACTIVE_CHECK  = "11:00"    # время проверки каждый день
+INACTIVE_CHECK  = "09:00"    # 09:00 UTC = 11:00 czasu polskiego (UTC+2)
 
 INACTIVE_MESSAGE = (
     "⚡ <b>Dawno Cię nie było!</b>\n\n"
@@ -59,7 +59,7 @@ INACTIVE_MESSAGE = (
 PUSH_MESSAGES = [
     "🔄 <b>Algorytm zaktualizowany!</b>\n\nDzisiejsze sygnały są gotowe — sprawdź przewidywania i zacznij wygrywać 💎",
     "⚡ <b>Uwaga!</b>\n\nDziś algorytm wykrył wyjątkowo wysoką skuteczność predykcji. Nie przegap okazji — sygnały czekają 🎯",
-    "🌙 <b>Wieczorna sesja startuje!</b>\n\nAlgorytm przeanalizował wzorce — Twoje sygnały są gotowe 📡",
+    "☀️ <b>Dzień dobry!</b>\n\nAlgorytm przeanalizował wzorce — Twoje sygnały na dziś są gotowe 📡",
     "💰 <b>Nasi gracze dziś już zbierają!</b>\n\nAlgorytm pracuje na pełnych obrotach — Twoje sygnały czekają 🚀",
     "👋 <b>Hej!</b>\n\nAlgorytm non-stop analizuje wzorce i ma dla Ciebie gotowe sygnały na dziś 💎 Wejdź teraz",
 ]
