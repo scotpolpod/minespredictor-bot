@@ -36,6 +36,7 @@ if REDIS_URL:
 
 # ── SPINBETTER VERIFICATION ───────────────────────────────
 SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "")
+SPINBETTER_USER_ID  = os.getenv("SPINBETTER_USER_ID", "")
 SPINBETTER_CUSTOMER = "casinoz"
 SPINBETTER_CACHE_KEY = "spinbetter_players"
 SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
@@ -64,6 +65,7 @@ def fetch_spinbetter_players():
             "Authorization": SPINBETTER_TOKEN,
             "Content-Type":  "application/json",
             "X-Customer-Id": SPINBETTER_CUSTOMER,
+            "X-User-Id":     SPINBETTER_USER_ID,
             "Origin":        "https://panel.spinbetterpartners.com",
             "Referer":       "https://panel.spinbetterpartners.com/",
         }
@@ -71,6 +73,9 @@ def fetch_spinbetter_players():
             "https://affiliatecontrol-api.com/affiliates/reports",
             json=payload, headers=headers, timeout=20
         )
+        print(f"SpinBetter API status: {resp.status_code}")
+        if not resp.ok:
+            print(f"SpinBetter API error body: {resp.text[:300]}")
         resp.raise_for_status()
         data = resp.json()
         players = {}
@@ -878,6 +883,30 @@ def _do_broadcast(uid, text):
         except Exception as e:
             bot.send_message(uid, f"❌ Błąd: {e}", parse_mode="HTML")
     threading.Thread(target=do_send, daemon=True).start()
+
+# ── /sbstatus ─────────────────────────────────────────────
+
+@bot.message_handler(commands=["sbstatus"])
+def cmd_sbstatus(message):
+    if not is_admin(message):
+        return
+    players = _sb_players_cache
+    if _redis:
+        try:
+            raw = _redis.get(SPINBETTER_CACHE_KEY)
+            if raw:
+                players = json.loads(raw)
+        except Exception:
+            pass
+    total = len(players)
+    with_dep = sum(1 for v in players.values() if v)
+    bot.send_message(message.chat.id,
+        f"📊 <b>SpinBetter cache</b>\n\n"
+        f"👥 Игроков в кеше: <b>{total}</b>\n"
+        f"💰 С депозитом: <b>{with_dep}</b>\n"
+        f"🔑 Token: <code>{'OK' if SPINBETTER_TOKEN else 'НЕТ'}</code>\n"
+        f"🆔 User-Id: <code>{'OK' if SPINBETTER_USER_ID else 'НЕТ'}</code>",
+        parse_mode="HTML")
 
 # ── /statystyki ───────────────────────────────────────────
 
