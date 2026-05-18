@@ -54,7 +54,7 @@ def fetch_spinbetter_players():
             "from": "2020-01-01 00:00:00",
             "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
             "having": {},
-            "limit": 100000,
+            "limit": 1000,
             "metrics": ["registrations_count", "deposits_first_count"],
             "metrics_format": "pretty",
             "offset": 0,
