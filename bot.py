@@ -199,7 +199,10 @@ def days_left(data, uid):
     end  = user.get("subscription_end")
     if not end:
         return 0
-    return max(0, (datetime.fromisoformat(end) - datetime.now()).days)
+    diff = datetime.fromisoformat(end) - datetime.now()
+    if diff.total_seconds() <= 0:
+        return 0
+    return max(1, diff.days)  # минимум 1 пока подписка активна
 
 def is_admin(obj):
     u = obj.from_user.username
