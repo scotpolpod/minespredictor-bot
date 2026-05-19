@@ -52,55 +52,74 @@ def _parse_amount(raw):
     except Exception:
         return 0.0
 
+def _do_fetch(metrics):
+    """Выполняет один запрос к SpinBetter API с заданными метриками."""
+    payload = {
+        "dimensions": ["site_player_id"],
+        "filters": {},
+        "from": "2020-01-01 00:00:00",
+        "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
+        "having": {},
+        "limit": 1000,
+        "metrics": metrics,
+        "metrics_format": "pretty",
+        "offset": 0,
+        "search": {},
+        "sorting": [{"sort_by": "site_player_id", "sort_dir": "desc"}],
+    }
+    headers = {
+        "Authorization": SPINBETTER_TOKEN,
+        "Content-Type":  "application/json",
+        "X-Customer-Id": SPINBETTER_CUSTOMER,
+        "X-User-Id":     SPINBETTER_USER_ID,
+        "Origin":        "https://panel.spinbetterpartners.com",
+        "Referer":       "https://panel.spinbetterpartners.com/",
+    }
+    resp = _requests.post(
+        "https://affiliatecontrol-api.com/affiliates/reports",
+        json=payload, headers=headers, timeout=20
+    )
+    print(f"SpinBetter API status: {resp.status_code}")
+    if not resp.ok:
+        print(f"SpinBetter API error body: {resp.text[:300]}")
+    resp.raise_for_status()
+    return resp.json()
+
 def fetch_spinbetter_players():
     """Загружает игроков из SpinBetter. Возвращает dict {pid: total_dep_usd}."""
     try:
-        payload = {
-            "dimensions": ["site_player_id"],
-            "filters": {},
-            "from": "2020-01-01 00:00:00",
-            "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
-            "having": {},
-            "limit": 1000,
-            "metrics": [
+        # Пробуем с FD + RD
+        try:
+            data = _do_fetch([
                 "registrations_count",
                 "deposits_first_count",
                 "deposits_first_sum",
-            ],
-            "metrics_format": "pretty",
-            "offset": 0,
-            "search": {},
-            "sorting": [{"sort_by": "site_player_id", "sort_dir": "desc"}],
-        }
-        headers = {
-            "Authorization": SPINBETTER_TOKEN,
-            "Content-Type":  "application/json",
-            "X-Customer-Id": SPINBETTER_CUSTOMER,
-            "X-User-Id":     SPINBETTER_USER_ID,
-            "Origin":        "https://panel.spinbetterpartners.com",
-            "Referer":       "https://panel.spinbetterpartners.com/",
-        }
-        resp = _requests.post(
-            "https://affiliatecontrol-api.com/affiliates/reports",
-            json=payload, headers=headers, timeout=20
-        )
-        print(f"SpinBetter API status: {resp.status_code}")
-        if not resp.ok:
-            print(f"SpinBetter API error body: {resp.text[:300]}")
-        resp.raise_for_status()
-        data = resp.json()
+                "deposits_rd_sum",
+            ])
+            has_rd = True
+        except Exception as e:
+            print(f"SpinBetter fetch with RD failed ({e}), retrying without RD...")
+            data = _do_fetch([
+                "registrations_count",
+                "deposits_first_count",
+                "deposits_first_sum",
+            ])
+            has_rd = False
+
         players = {}
         for item in data.get("payload", {}).get("data", []):
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
-            players[str(pid)] = total
-        print(f"SpinBetter: {len(players)} players loaded.")
+            fd = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+            rd = _parse_amount(item.get("deposits_rd_sum",    "$0.00")) if has_rd else 0.0
+            players[str(pid)] = fd + rd
+        print(f"SpinBetter: {len(players)} players loaded (RD={'yes' if has_rd else 'no'}).")
         return players
     except Exception as e:
         print(f"SpinBetter fetch error: {e}")
         return None
+
 
 def refresh_sb_cache():
     global _sb_players_cache
