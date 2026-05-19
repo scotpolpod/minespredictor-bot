@@ -119,7 +119,7 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-MIN_DEPOSIT = 25.0  # ~100 zł в USD (API SpinBetter zwraca wartości w dolarach)
+MIN_DEPOSIT = 20.0  # ~80 zł в USD (API SpinBetter zwraca wartości w dolarach)
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
