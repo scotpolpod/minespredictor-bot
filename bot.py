@@ -88,37 +88,19 @@ def _do_fetch(metrics):
 def fetch_spinbetter_players():
     """Загружает игроков из SpinBetter. Возвращает dict {pid: total_dep_usd}."""
     try:
-        # Пробуем с deposits_sum (все депозиты), fallback на deposits_first_sum
-        try:
-            data = _do_fetch([
-                "registrations_count",
-                "deposits_first_count",
-                "deposits_first_sum",
-                "deposits_sum",
-            ])
-            has_total = True
-        except Exception as e:
-            print(f"SpinBetter fetch with deposits_sum failed ({e}), retrying without it...")
-            data = _do_fetch([
-                "registrations_count",
-                "deposits_first_count",
-                "deposits_first_sum",
-            ])
-            has_total = False
-
+        # API SpinBetter отдаёт только deposits_first_sum (первый депозит)
+        data = _do_fetch([
+            "registrations_count",
+            "deposits_first_count",
+            "deposits_first_sum",
+        ])
         players = {}
         for item in data.get("payload", {}).get("data", []):
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            if has_total:
-                total = _parse_amount(item.get("deposits_sum", "$0.00"))
-                if total == 0.0:
-                    total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
-            else:
-                total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
-            players[str(pid)] = total
-        print(f"SpinBetter: {len(players)} players loaded (total={'yes' if has_total else 'FD only'}).")
+            players[str(pid)] = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+        print(f"SpinBetter: {len(players)} players loaded.")
         return players
     except Exception as e:
         print(f"SpinBetter fetch error: {e}")
