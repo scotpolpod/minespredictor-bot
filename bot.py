@@ -580,14 +580,14 @@ def msg_id(message):
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
-                f"🎯 Wymagane minimum: <b>~100 zł</b>\n\n"
+                f"🎯 Wymagane minimum: <b>~80 zł</b>\n\n"
                 f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SpinBetter "
                 f"i wyślij swoje <b>ID ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum 100 zł</b> w SpinBetter.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w SpinBetter.\n\n"
                 f"Po wpłacie wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
