@@ -45,8 +45,15 @@ SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
 # {player_id: True/False} где True = есть депозит
 _sb_players_cache = {}
 
+def _parse_amount(raw):
+    """Парсит сумму вида '$13.70' или '13.70' → float."""
+    try:
+        return float(str(raw).replace("$", "").replace(",", ".").strip())
+    except Exception:
+        return 0.0
+
 def fetch_spinbetter_players():
-    """Загружает игроков из SpinBetter. Возвращает dict {pid: has_deposit}."""
+    """Загружает игроков из SpinBetter. Возвращает dict {pid: total_dep_usd}."""
     try:
         payload = {
             "dimensions": ["site_player_id"],
@@ -55,7 +62,13 @@ def fetch_spinbetter_players():
             "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
             "having": {},
             "limit": 1000,
-            "metrics": ["registrations_count", "deposits_first_count", "deposits_first_sum"],
+            "metrics": [
+                "registrations_count",
+                "deposits_first_count",
+                "deposits_first_sum",
+                "deposits_count",
+                "deposits_sum",
+            ],
             "metrics_format": "pretty",
             "offset": 0,
             "search": {},
@@ -83,12 +96,11 @@ def fetch_spinbetter_players():
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            dep_sum = item.get("deposits_first_sum", "$0.00").replace("$", "").replace(",", ".")
-            try:
-                dep_amount = float(dep_sum)
-            except Exception:
-                dep_amount = 0.0
-            players[str(pid)] = dep_amount  # сохраняем сумму депозита
+            # Берём сумму всех депозитов (FD + RD); если нет — fallback на FD
+            total = _parse_amount(item.get("deposits_sum", "$0.00"))
+            if total == 0.0:
+                total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+            players[str(pid)] = total
         print(f"SpinBetter: {len(players)} players loaded.")
         return players
     except Exception as e:
@@ -110,7 +122,7 @@ def refresh_sb_cache():
 MIN_DEPOSIT = 25.0  # ~100 zł в USD (API SpinBetter zwraca wartości w dolarach)
 
 def check_player(player_id):
-    """Returns: 'not_found' | 'no_deposit' | 'ok'"""
+    """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
     if not SPINBETTER_TOKEN:
         return "ok"
     pid = str(player_id).strip()
@@ -128,7 +140,9 @@ def check_player(player_id):
         dep = float(players[pid])
     except (TypeError, ValueError):
         dep = 0.0
-    return "ok" if dep >= MIN_DEPOSIT else "no_deposit"
+    if dep >= MIN_DEPOSIT:
+        return "ok"
+    return ("no_deposit", dep)
 
 def sb_scheduler():
     """Updates SpinBetter cache every 3 minutes."""
@@ -557,12 +571,25 @@ def msg_id(message):
             "Jeśli właśnie założyłeś konto — poczekaj chwilę i spróbuj ponownie 🔄",
             parse_mode="HTML")
         return
-    if sb_status == "no_deposit":
-        bot.send_message(uid,
-            "✅ <b>Rejestracja potwierdzona!</b>\n\n"
-            "Aby odblokować dostęp do sygnałów — dokonaj wpłaty w wysokości <b>minimum 100 zł</b> w SpinBetter.\n\n"
-            "Po wpłacie wróć tutaj i wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
-            parse_mode="HTML")
+    if isinstance(sb_status, tuple) and sb_status[0] == "no_deposit":
+        dep_usd  = sb_status[1]
+        dep_pln  = round(dep_usd * 4.0)   # примерный курс $1 ≈ 4 zł
+        need_usd = MIN_DEPOSIT - dep_usd
+        need_pln = round(need_usd * 4.0)
+        if dep_usd > 0:
+            bot.send_message(uid,
+                f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
+                f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
+                f"🎯 Wymagane minimum: <b>~100 zł</b>\n\n"
+                f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SpinBetter "
+                f"i wyślij swoje <b>ID ponownie</b> 🔄",
+                parse_mode="HTML")
+        else:
+            bot.send_message(uid,
+                f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum 100 zł</b> w SpinBetter.\n\n"
+                f"Po wpłacie wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
+                parse_mode="HTML")
         return
 
     # Zapisz player_id + dane użytkownika
@@ -947,12 +974,13 @@ def cmd_sbcheck(message):
     if pid not in players:
         bot.send_message(message.chat.id, f"❌ ID <code>{pid}</code> — nie znaleziono w cache.", parse_mode="HTML")
         return
-    dep = players[pid]
-    status = "✅ OK" if float(dep) >= MIN_DEPOSIT else f"⚠️ Za mało (min {MIN_DEPOSIT})"
+    dep = float(players[pid])
+    dep_pln = round(dep * 4.0)
+    status = "✅ OK" if dep >= MIN_DEPOSIT else f"⚠️ Za mało — brakuje ${MIN_DEPOSIT - dep:.2f} (~{round((MIN_DEPOSIT - dep) * 4)} zł)"
     bot.send_message(message.chat.id,
         f"🔍 <b>SpinBetter check</b>\n\n"
         f"🆔 ID: <code>{pid}</code>\n"
-        f"💰 Depozyt w API: <b>{dep}</b>\n"
+        f"💰 Suma depozytów: <b>${dep:.2f}</b> (~{dep_pln} zł)\n"
         f"📊 Status: {status}",
         parse_mode="HTML")
 
