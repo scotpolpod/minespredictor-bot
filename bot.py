@@ -55,7 +55,7 @@ def fetch_spinbetter_players():
             "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
             "having": {},
             "limit": 1000,
-            "metrics": ["registrations_count", "deposits_first_count"],
+            "metrics": ["registrations_count", "deposits_first_count", "deposits_first_sum"],
             "metrics_format": "pretty",
             "offset": 0,
             "search": {},
@@ -107,7 +107,7 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-MIN_DEPOSIT = 100.0  # минимальный депозит в złotych
+MIN_DEPOSIT = 25.0  # ~100 zł в USD (API SpinBetter zwraca wartości w dolarach)
 
 def check_player(player_id):
     """Returns: 'not_found' | 'no_deposit' | 'ok'"""
