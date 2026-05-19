@@ -399,6 +399,15 @@ def cmd_start(message):
                 f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
                 parse_mode="HTML")
     else:
+        # Запоминаем время первого /start для автосообщения через 10 минут
+        data = load_data()
+        user = data["users"].setdefault(str(uid), {})
+        if not user.get("start_at"):
+            user["start_at"] = datetime.now().isoformat()
+            user["tg_id"]    = uid
+            user["username"]  = message.from_user.username or ""
+            user["first_name"] = message.from_user.first_name or ""
+            save_data(data)
         bot.send_message(uid,
             "👋 Witaj w <b>MinesPredictor</b>!\n\n"
             "🎯 Algorytm przewiduje miny, kryształy i strefy penalty.\n\n"
@@ -1035,6 +1044,55 @@ def cmd_help(message):
         "Zakup subskrypcji: @rmpl13",
         parse_mode="HTML")
 
+# ── AUTO-MESSAGE: 10 min po /start bez subskrypcji ────────
+
+INTRO_DELAY = 10 * 60  # 10 minut w sekundach
+
+INTRO_MESSAGE = (
+    "⏰ <b>Hej, jeszcze tu jesteś?</b>\n\n"
+    "Zauważyliśmy, że nie aktywowałeś jeszcze subskrypcji.\n\n"
+    "🎯 Nasz algorytm dziś już pomógł graczom zdobyć pierwsze wygrane — "
+    "nie zostań z tyłu!\n\n"
+    "💳 Wybierz plan i zacznij wygrywać:\n"
+    "👉 Skontaktuj się z <a href='https://t.me/rmpl13'>@rmpl13</a> "
+    "lub wpisz swój kod aktywacyjny"
+)
+
+def intro_scheduler():
+    """Co minutę sprawdza czy minęło 10 min od /start i wysyła wiadomość."""
+    while True:
+        try:
+            data = load_data()
+            now  = datetime.now()
+            changed = False
+            for uid_str, user in data["users"].items():
+                # Пропускаем если уже подписан или уже отправляли
+                if user.get("subscription_end") or user.get("intro_sent"):
+                    continue
+                start_at = user.get("start_at")
+                if not start_at:
+                    continue
+                elapsed = (now - datetime.fromisoformat(start_at)).total_seconds()
+                if elapsed >= INTRO_DELAY:
+                    try:
+                        bot.send_message(
+                            int(uid_str),
+                            INTRO_MESSAGE,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                            reply_markup=kb_plans()
+                        )
+                        print(f"intro_scheduler: sent to {uid_str}")
+                    except Exception as e:
+                        print(f"intro_scheduler send error {uid_str}: {e}")
+                    user["intro_sent"] = True
+                    changed = True
+            if changed:
+                save_data(data)
+        except Exception as e:
+            print(f"intro_scheduler error: {e}")
+        time.sleep(60)
+
 # ── RUN ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1042,6 +1100,7 @@ if __name__ == "__main__":
     threading.Thread(target=push_scheduler, daemon=True).start()
     threading.Thread(target=inactive_scheduler, daemon=True).start()
     threading.Thread(target=sb_scheduler, daemon=True).start()
+    threading.Thread(target=intro_scheduler, daemon=True).start()
     print("Schedulery uruchomione.")
 
     try:
