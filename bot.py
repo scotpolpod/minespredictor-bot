@@ -83,8 +83,12 @@ def fetch_spinbetter_players():
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            has_dep = int(item.get("deposits_first_count") or 0) > 0
-            players[str(pid)] = has_dep
+            dep_sum = item.get("deposits_first_sum", "$0.00").replace("$", "").replace(",", ".")
+            try:
+                dep_amount = float(dep_sum)
+            except Exception:
+                dep_amount = 0.0
+            players[str(pid)] = dep_amount  # сохраняем сумму депозита
         print(f"SpinBetter: {len(players)} players loaded.")
         return players
     except Exception as e:
@@ -103,6 +107,8 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
+MIN_DEPOSIT = 20.0  # минимальный депозит в долларах
+
 def check_player(player_id):
     """Returns: 'not_found' | 'no_deposit' | 'ok'"""
     if not SPINBETTER_TOKEN:
@@ -118,7 +124,11 @@ def check_player(player_id):
             pass
     if pid not in players:
         return "not_found"
-    return "ok" if players[pid] else "no_deposit"
+    try:
+        dep = float(players[pid])
+    except (TypeError, ValueError):
+        dep = 0.0
+    return "ok" if dep >= MIN_DEPOSIT else "no_deposit"
 
 def sb_scheduler():
     """Updates SpinBetter cache every 3 minutes."""
@@ -546,7 +556,7 @@ def msg_id(message):
     if sb_status == "no_deposit":
         bot.send_message(uid,
             "✅ <b>Rejestracja potwierdzona!</b>\n\n"
-            "Aby odblokować dostęp do sygnałów — dokonaj pierwszej wpłaty w SpinBetter.\n\n"
+            "Aby odblokować dostęp do sygnałów — dokonaj wpłaty w wysokości <b>minimum $20</b> w SpinBetter.\n\n"
             "Po wpłacie wróć tutaj i wpisz swoje ID ponownie — dostęp zostanie przyznany automatycznie 🎯",
             parse_mode="HTML")
         return
