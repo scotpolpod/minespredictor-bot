@@ -66,8 +66,6 @@ def fetch_spinbetter_players():
                 "registrations_count",
                 "deposits_first_count",
                 "deposits_first_sum",
-                "deposits_count",
-                "deposits_sum",
             ],
             "metrics_format": "pretty",
             "offset": 0,
@@ -96,10 +94,7 @@ def fetch_spinbetter_players():
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            # Берём сумму всех депозитов (FD + RD); если нет — fallback на FD
-            total = _parse_amount(item.get("deposits_sum", "$0.00"))
-            if total == 0.0:
-                total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+            total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
             players[str(pid)] = total
         print(f"SpinBetter: {len(players)} players loaded.")
         return players
