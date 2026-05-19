@@ -925,6 +925,37 @@ def cmd_sbstatus(message):
         f"🆔 User-Id: <code>{'OK' if SPINBETTER_USER_ID else 'НЕТ'}</code>",
         parse_mode="HTML")
 
+# ── /sbcheck ─────────────────────────────────────────────
+
+@bot.message_handler(commands=["sbcheck"])
+def cmd_sbcheck(message):
+    if not is_admin(message):
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        bot.send_message(message.chat.id, "Użycie: /sbcheck PLAYER_ID")
+        return
+    pid = parts[1].strip()
+    players = _sb_players_cache
+    if _redis:
+        try:
+            raw = _redis.get(SPINBETTER_CACHE_KEY)
+            if raw:
+                players = json.loads(raw)
+        except Exception:
+            pass
+    if pid not in players:
+        bot.send_message(message.chat.id, f"❌ ID <code>{pid}</code> — nie znaleziono w cache.", parse_mode="HTML")
+        return
+    dep = players[pid]
+    status = "✅ OK" if float(dep) >= MIN_DEPOSIT else f"⚠️ Za mało (min {MIN_DEPOSIT})"
+    bot.send_message(message.chat.id,
+        f"🔍 <b>SpinBetter check</b>\n\n"
+        f"🆔 ID: <code>{pid}</code>\n"
+        f"💰 Depozyt w API: <b>{dep}</b>\n"
+        f"📊 Status: {status}",
+        parse_mode="HTML")
+
 # ── /statystyki ───────────────────────────────────────────
 
 @bot.message_handler(commands=["statystyki"])
