@@ -88,18 +88,22 @@ def _do_fetch(metrics):
 def fetch_spinbetter_players():
     """Загружает игроков из SpinBetter. Возвращает dict {pid: total_dep_usd}."""
     try:
-        # API SpinBetter отдаёт только deposits_first_sum (первый депозит)
+        # deposits_all_sum = сумма всех депозитов (FD + RD)
         data = _do_fetch([
             "registrations_count",
             "deposits_first_count",
             "deposits_first_sum",
+            "deposits_all_sum",
         ])
         players = {}
         for item in data.get("payload", {}).get("data", []):
             pid = item.get("site_player_id")
             if not pid or pid == "Незарегистрированный":
                 continue
-            players[str(pid)] = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+            total = _parse_amount(item.get("deposits_all_sum", "$0.00"))
+            if total == 0.0:
+                total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
+            players[str(pid)] = total
         print(f"SpinBetter: {len(players)} players loaded.")
         return players
     except Exception as e:
@@ -119,7 +123,7 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-MIN_DEPOSIT = 10.0  # ~40 zł в USD (API SpinBetter zwraca wartości w dolarach)
+MIN_DEPOSIT = 20.0  # ~80 zł в USD (deposits_all_sum = все депозиты FD+RD)
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
@@ -589,14 +593,14 @@ def msg_id(message):
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
-                f"🎯 Wymagane minimum: <b>~40 zł</b>\n\n"
+                f"🎯 Wymagane minimum: <b>~80 zł</b>\n\n"
                 f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SpinBetter "
                 f"i wyślij swoje <b>ID ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~40 zł</b> w SpinBetter.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w SpinBetter.\n\n"
                 f"Po wpłacie wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
