@@ -862,7 +862,8 @@ def cb_adm_push(call):
     for i, msg in enumerate(PUSH_MESSAGES):
         preview = msg.replace("<b>","").replace("</b>","")[:45] + "..."
         kb.add(InlineKeyboardButton(preview, callback_data=f"adm_ps_{i}"))
-    kb.add(InlineKeyboardButton("✏️ Własna wiadomość", callback_data="adm_push_custom"))
+    kb.add(InlineKeyboardButton("✏️ Własna wiadomość",    callback_data="adm_push_custom"))
+    kb.add(InlineKeyboardButton("📷 Wiadomość ze zdjęciem", callback_data="adm_push_photo"))
     kb.add(InlineKeyboardButton("◀️ Wróć", callback_data="adm_back"))
     try:
         bot.edit_message_text("📢 <b>Wybierz wiadomość push:</b>",
@@ -906,6 +907,24 @@ def cb_adm_push_custom(call):
         print(f"cb_adm_push_custom error: {e}")
     bot.answer_callback_query(call.id)
 
+@bot.callback_query_handler(func=lambda c: c.data == "adm_push_photo")
+def cb_adm_push_photo(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
+    user_state[call.from_user.id] = "entering_broadcast_photo"
+    try:
+        bot.edit_message_text(
+            "📷 <b>Wyślij zdjęcie z podpisem:</b>\n\n"
+            "Wyślij zdjęcie i wpisz tekst jako podpis (caption).\n"
+            "Obsługuje HTML: &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;\n\n"
+            "⚠️ Podpis jest opcjonalny — możesz wysłać samo zdjęcie.",
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("◀️ Anuluj", callback_data="adm_back")))
+    except Exception as e:
+        print(f"cb_adm_push_photo error: {e}")
+    bot.answer_callback_query(call.id)
+
 @bot.message_handler(func=lambda m: user_state.get(m.from_user.id) == "entering_broadcast")
 def msg_broadcast(message):
     if not is_admin(message):
@@ -916,6 +935,19 @@ def msg_broadcast(message):
     if not text:
         return
     _do_broadcast(uid, text)
+
+@bot.message_handler(
+    content_types=["photo"],
+    func=lambda m: user_state.get(m.from_user.id) == "entering_broadcast_photo"
+)
+def msg_broadcast_photo(message):
+    if not is_admin(message):
+        return
+    uid     = message.from_user.id
+    file_id = message.photo[-1].file_id          # берём наибольшее разрешение
+    caption = (message.caption or "").strip()
+    user_state.pop(uid, None)
+    _do_broadcast_photo(uid, file_id, caption)
 
 @bot.message_handler(commands=["send"])
 def cmd_send(message):
@@ -935,6 +967,31 @@ def _do_broadcast(uid, text):
             bot.send_message(uid, f"✅ Wysłano do <b>{sent}</b> subskrybentów.", parse_mode="HTML")
         except Exception as e:
             bot.send_message(uid, f"❌ Błąd: {e}", parse_mode="HTML")
+    threading.Thread(target=do_send, daemon=True).start()
+
+def _do_broadcast_photo(uid, file_id, caption):
+    bot.send_message(uid, "📷 <b>Wysyłam zdjęcie...</b>", parse_mode="HTML")
+    def do_send():
+        data = load_data()
+        sent = 0
+        for uid_str, user in data["users"].items():
+            if not is_subscribed(data, int(uid_str)):
+                continue
+            try:
+                bot.send_photo(
+                    int(uid_str),
+                    file_id,
+                    caption=caption if caption else None,
+                    parse_mode="HTML"
+                )
+                sent += 1
+                time.sleep(0.05)
+            except Exception as e:
+                print(f"broadcast_photo error {uid_str}: {e}")
+        try:
+            bot.send_message(uid, f"✅ Zdjęcie wysłane do <b>{sent}</b> subskrybentów.", parse_mode="HTML")
+        except Exception:
+            pass
     threading.Thread(target=do_send, daemon=True).start()
 
 # ── /sbstatus ─────────────────────────────────────────────
