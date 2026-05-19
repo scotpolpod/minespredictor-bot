@@ -107,7 +107,7 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-MIN_DEPOSIT = 20.0  # минимальный депозит в долларах
+MIN_DEPOSIT = 100.0  # минимальный депозит в złotych
 
 def check_player(player_id):
     """Returns: 'not_found' | 'no_deposit' | 'ok'"""
@@ -556,7 +556,7 @@ def msg_id(message):
     if sb_status == "no_deposit":
         bot.send_message(uid,
             "✅ <b>Rejestracja potwierdzona!</b>\n\n"
-            "Aby odblokować dostęp do sygnałów — dokonaj wpłaty w wysokości <b>minimum $20</b> w SpinBetter.\n\n"
+            "Aby odblokować dostęp do sygnałów — dokonaj wpłaty w wysokości <b>minimum 100 zł</b> w SpinBetter.\n\n"
             "Po wpłacie wróć tutaj i wpisz swoje ID ponownie — dostęp zostanie przyznany automatycznie 🎯",
             parse_mode="HTML")
         return
