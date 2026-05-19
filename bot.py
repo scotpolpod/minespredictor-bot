@@ -133,7 +133,7 @@ def refresh_sb_cache():
         except Exception as e:
             print(f"SpinBetter Redis save error: {e}")
 
-MIN_DEPOSIT = 20.0  # ~80 zł в USD (API SpinBetter zwraca wartości w dolarach)
+MIN_DEPOSIT = 10.0  # ~40 zł в USD (API SpinBetter zwraca wartości w dolarach)
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
@@ -603,14 +603,14 @@ def msg_id(message):
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
-                f"🎯 Wymagane minimum: <b>~80 zł</b>\n\n"
+                f"🎯 Wymagane minimum: <b>~40 zł</b>\n\n"
                 f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SpinBetter "
                 f"i wyślij swoje <b>ID ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w SpinBetter.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~40 zł</b> w SpinBetter.\n\n"
                 f"Po wpłacie wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
