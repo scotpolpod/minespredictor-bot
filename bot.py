@@ -545,7 +545,11 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
+    # Всегда делаем свежий запрос к SpinBetter при вводе ID
+    # (избегаем ситуации когда кэш устарел и депозит ещё не подтянулся)
+    refresh_sb_cache()
     sb_status = check_player(player_id)
+
     if sb_status == "not_found":
         bot.send_message(uid,
             "❌ <b>Nie znaleziono takiego ID.</b>\n\n"
@@ -557,7 +561,7 @@ def msg_id(message):
         bot.send_message(uid,
             "✅ <b>Rejestracja potwierdzona!</b>\n\n"
             "Aby odblokować dostęp do sygnałów — dokonaj wpłaty w wysokości <b>minimum 100 zł</b> w SpinBetter.\n\n"
-            "Po wpłacie wróć tutaj i wpisz swoje ID ponownie — dostęp zostanie przyznany automatycznie 🎯",
+            "Po wpłacie wróć tutaj i wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
             parse_mode="HTML")
         return
 
@@ -940,6 +944,25 @@ def cmd_statystyki(message):
         f"⚽ Penalty: <b>{wins_penalty}</b>\n\n"
         f"🔑 Subskrypcja: {sub_str}",
         parse_mode="HTML")
+
+# ── CATCH-ALL: подписан но нет player_id (после перезапуска бота) ──────────
+
+@bot.message_handler(func=lambda m: (
+    m.content_type == 'text'
+    and user_state.get(m.from_user.id) is None
+    and not m.text.startswith('/')
+))
+def catch_text(message):
+    uid  = message.from_user.id
+    data = load_data()
+    if not is_subscribed(data, uid):
+        return
+    player_id = data["users"].get(str(uid), {}).get("player_id", "")
+    if player_id:
+        return  # уже есть ID — игнорируем случайный текст
+    # Нет player_id — считаем что юзер присылает ID
+    user_state[uid] = "entering_id"
+    msg_id(message)
 
 # ── /help ─────────────────────────────────────────────────
 
