@@ -14,6 +14,7 @@ load_dotenv()
 
 BOT_TOKEN      = os.getenv("BOT_TOKEN")
 WEBAPP_URL     = os.getenv("WEBAPP_URL")
+BOT_USERNAME   = os.getenv("BOT_USERNAME", "")   # e.g. "MinesPredictorBot"
 ADMIN_USERNAME = "rmpl13"
 MANAGER_LINK   = "https://t.me/rmpl13"
 DATA_FILE      = "data.json"
@@ -241,12 +242,32 @@ def is_vip(username):
         return False
     return username.lower() in [v.lower() for v in VIP_USERNAMES]
 
-def build_url(player_id, dl, username=""):
-    vip = "&vip=1" if is_vip(username) else ""
-    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}"
+def build_url(player_id, dl, username="", ref_bonus=0, ref_code=""):
+    vip     = "&vip=1" if is_vip(username) else ""
+    bonus   = f"&bonus={ref_bonus}" if ref_bonus > 0 else ""
+    ref     = f"&ref={ref_code}"    if ref_code    else ""
+    bot_u   = f"&bot={BOT_USERNAME}" if BOT_USERNAME else ""
+    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}{bonus}{ref}{bot_u}"
 
 def gen_code():
     return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def gen_ref_code():
+    return "REF-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def get_ref_code(uid, data):
+    """Returns user's unique referral code, creates one if it doesn't exist."""
+    user = data["users"].get(str(uid), {})
+    code = user.get("ref_code")
+    if not code:
+        existing = {u.get("ref_code") for u in data["users"].values() if u.get("ref_code")}
+        code = gen_ref_code()
+        while code in existing:
+            code = gen_ref_code()
+        if str(uid) in data["users"]:
+            data["users"][str(uid)]["ref_code"] = code
+            save_data(data)
+    return code
 
 # ── BROADCAST ─────────────────────────────────────────────
 
@@ -305,10 +326,12 @@ def send_inactive_push():
         player_id = user.get("player_id", "")
         dl        = days_left(data, uid_str)
         username  = user.get("username", "")
+        ref_bonus = user.get("ref_bonus", 0)
+        ref_code  = user.get("ref_code", "")
         try:
             kb = InlineKeyboardMarkup()
             if player_id:
-                url = build_url(player_id, dl, username)
+                url = build_url(player_id, dl, username, ref_bonus, ref_code)
                 kb.add(InlineKeyboardButton("🚀 Otwórz MinesPredictor", web_app=WebAppInfo(url=url)))
             bot.send_message(int(uid_str), INACTIVE_MESSAGE, parse_mode="HTML",
                              reply_markup=kb if player_id else None)
@@ -358,6 +381,7 @@ def kb_back_plans():
     kb.add(InlineKeyboardButton("◀️ Wróć do planów", callback_data="back_plans"))
     return kb
 
+
 def kb_admin_main():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -381,14 +405,25 @@ def cmd_start(message):
     uid  = message.from_user.id
     data = load_data()
     touch_activity(uid, data)
-    save_data(data)
     user_state.pop(uid, None)
+
+    # Deep-link referral: /start REF-XXXXXXXX
+    parts       = message.text.strip().split(maxsplit=1)
+    start_param = parts[1].upper() if len(parts) > 1 else ""
+    if start_param.startswith("REF-"):
+        user = data["users"].setdefault(str(uid), {})
+        if not user.get("pending_ref"):          # store only once, prevent overwrite
+            user["pending_ref"] = start_param
+    save_data(data)
 
     if is_subscribed(data, uid):
         dl        = days_left(data, uid)
         player_id = data["users"].get(str(uid), {}).get("player_id", "")
+        uname     = message.from_user.username or ""
         if player_id:
-            url = build_url(player_id, dl, message.from_user.username if hasattr(message, 'from_user') else "")
+            ref_bonus = data["users"].get(str(uid), {}).get("ref_bonus", 0)
+            ref_code  = get_ref_code(uid, data)
+            url = build_url(player_id, dl, uname, ref_bonus, ref_code)
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
@@ -403,13 +438,11 @@ def cmd_start(message):
                 f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
                 parse_mode="HTML")
     else:
-        # Запоминаем время первого /start для автосообщения через 10 минут
-        data = load_data()
         user = data["users"].setdefault(str(uid), {})
         if not user.get("start_at"):
-            user["start_at"] = datetime.now().isoformat()
-            user["tg_id"]    = uid
-            user["username"]  = message.from_user.username or ""
+            user["start_at"]   = datetime.now().isoformat()
+            user["tg_id"]      = uid
+            user["username"]   = message.from_user.username or ""
             user["first_name"] = message.from_user.first_name or ""
             save_data(data)
         bot.send_message(uid,
@@ -417,8 +450,10 @@ def cmd_start(message):
             "🎯 Algorytm przewiduje miny, kryształy i strefy penalty.\n\n"
             "🔒 Aby korzystać — aktywuj subskrypcję.\n"
             "Masz kod? Kliknij <b>«Mam kod aktywacyjny»</b>.\n\n"
+            "🎁 Chcesz <b>7 dni za darmo</b>? Napisz do <a href='https://t.me/rmpl13'>@rmpl13</a>!\n\n"
             "💳 <b>Wybierz plan:</b>",
             parse_mode="HTML",
+            disable_web_page_preview=True,
             reply_markup=kb_plans())
 
 # ── PLAN SELECTION ────────────────────────────────────────
@@ -519,8 +554,9 @@ def process_code(uid, code, chat_id, username="", first_name=""):
     c["used_by"] = uid
     c["used_at"] = datetime.now().isoformat()
 
-    existing  = data["users"].get(str(uid), {})
-    player_id = existing.get("player_id", "")
+    existing    = data["users"].get(str(uid), {})
+    player_id   = existing.get("player_id", "")
+    pending_ref = existing.get("pending_ref", "")   # referral from deep link
 
     data["users"][str(uid)] = {
         "subscription_end": end,
@@ -530,15 +566,26 @@ def process_code(uid, code, chat_id, username="", first_name=""):
         "username":         username or existing.get("username", ""),
         "first_name":       first_name or existing.get("first_name", ""),
         "player_id":        player_id,
-        "tg_id":            uid
+        "tg_id":            uid,
+        # preserve other fields so they survive the overwrite
+        "start_at":         existing.get("start_at"),
+        "intro_sent":       existing.get("intro_sent"),
+        "ref_code":         existing.get("ref_code"),
+        "ref_bonus":        existing.get("ref_bonus", 0),
     }
     save_data(data)
+
+    # Reward referrer if friend joined via deep link
+    if pending_ref:
+        _apply_referral(uid, pending_ref)
 
     exp_str = (datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')
 
     if player_id:
-        dl  = days_left(data, uid)
-        url = build_url(player_id, dl, username)
+        dl        = days_left(data, uid)
+        ref_bonus = data["users"].get(str(uid), {}).get("ref_bonus", 0)
+        ref_code  = get_ref_code(uid, data)
+        url = build_url(player_id, dl, username, ref_bonus, ref_code)
         user_state[uid] = None
         bot.send_message(chat_id,
             f"🎉 Subskrypcja aktywowana!\n\n"
@@ -554,6 +601,50 @@ def process_code(uid, code, chat_id, username="", first_name=""):
             f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
             f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
             parse_mode="HTML")
+
+# ── REFERRAL SYSTEM ──────────────────────────────────────
+
+def _apply_referral(new_uid, ref_code):
+    """Awards +2 bonus signals to the referrer. Called after friend activates sub."""
+    data = load_data()
+    referrer_uid_str = None
+    for uid_str, user in data["users"].items():
+        if user.get("ref_code") == ref_code and int(uid_str) != new_uid:
+            referrer_uid_str = uid_str
+            break
+    if not referrer_uid_str or not is_subscribed(data, referrer_uid_str):
+        return
+    data["users"][referrer_uid_str]["ref_bonus"] = \
+        data["users"][referrer_uid_str].get("ref_bonus", 0) + 2
+    save_data(data)
+    try:
+        new_bonus = data["users"][referrer_uid_str]["ref_bonus"]
+        bot.send_message(int(referrer_uid_str),
+            f"🎉 <b>Znajomy dołączył przez Twój link!</b>\n\n"
+            f"Twój aktualny bonus: <b>+{new_bonus} sygnałów dziennie</b> 🚀",
+            parse_mode="HTML")
+    except Exception as e:
+        print(f"_apply_referral notify error: {e}")
+
+@bot.message_handler(commands=["ref"])
+def cmd_ref(message):
+    uid  = message.from_user.id
+    data = load_data()
+    if not is_subscribed(data, uid):
+        bot.send_message(uid, "🔒 Musisz mieć aktywną subskrypcję aby korzystać z systemu poleceń.")
+        return
+    code  = get_ref_code(uid, data)
+    bonus = data["users"].get(str(uid), {}).get("ref_bonus", 0)
+    link  = f"https://t.me/{BOT_USERNAME}?start={code}" if BOT_USERNAME else f"(ustaw BOT_USERNAME) kod: {code}"
+    bot.send_message(uid,
+        f"👥 <b>Twój link polecenia</b>\n\n"
+        f"🔗 <code>{link}</code>\n\n"
+        f"🎁 Aktualny bonus: <b>+{bonus} sygnałów/dzień</b>\n\n"
+        f"Za każdego znajomego, który dołączy przez Twój link i aktywuje subskrypcję, "
+        f"otrzymujesz <b>+2 sygnały dziennie</b> na stałe! 🚀\n\n"
+        f"Możesz też udostępnić link z zakładki <b>Konto</b> w mini apce 👇",
+        parse_mode="HTML",
+        disable_web_page_preview=True)
 
 # ── ID ENTRY ──────────────────────────────────────────────
 
@@ -613,8 +704,11 @@ def msg_id(message):
         data["users"][str(uid)]["first_name"] = message.from_user.first_name or data["users"][str(uid)].get("first_name", "")
         save_data(data)
 
-    dl  = days_left(data, uid)
-    url = build_url(player_id, dl, message.from_user.username if hasattr(message, 'from_user') else "")
+    dl        = days_left(data, uid)
+    uname     = message.from_user.username if hasattr(message, 'from_user') else ""
+    ref_bonus = data["users"].get(str(uid), {}).get("ref_bonus", 0)
+    ref_code  = get_ref_code(uid, data)
+    url       = build_url(player_id, dl, uname, ref_bonus, ref_code)
     user_state[uid] = None
 
     bot.send_message(uid,
@@ -1101,8 +1195,9 @@ def cmd_help(message):
         "ℹ️ <b>Pomoc MinesPredictor</b>\n\n"
         "• /start — uruchom bota\n"
         "• /activate KOD — aktywuj subskrypcję\n"
+        "• /ref — Twój kod polecenia (+2 sygnały za przyjaciela)\n"
         "• /help — ta wiadomość\n\n"
-        "Zakup subskrypcji: @rmpl13",
+        "Zakup subskrypcji / 7 dni trial: @rmpl13",
         parse_mode="HTML")
 
 # ── AUTO-MESSAGE: 10 min po /start bez subskrypcji ────────
@@ -1158,6 +1253,16 @@ def intro_scheduler():
 
 if __name__ == "__main__":
     print("MinesPredictor bot uruchomiony...")
+
+    # Auto-fetch bot username for referral deep links
+    global BOT_USERNAME
+    if not BOT_USERNAME:
+        try:
+            BOT_USERNAME = bot.get_me().username or ""
+            print(f"Bot username: @{BOT_USERNAME}")
+        except Exception as _e:
+            print(f"Could not fetch bot username: {_e}")
+
     threading.Thread(target=push_scheduler, daemon=True).start()
     threading.Thread(target=inactive_scheduler, daemon=True).start()
     threading.Thread(target=sb_scheduler, daemon=True).start()
