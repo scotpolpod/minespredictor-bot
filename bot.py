@@ -1255,7 +1255,6 @@ if __name__ == "__main__":
     print("MinesPredictor bot uruchomiony...")
 
     # Auto-fetch bot username for referral deep links
-    global BOT_USERNAME
     if not BOT_USERNAME:
         try:
             BOT_USERNAME = bot.get_me().username or ""
