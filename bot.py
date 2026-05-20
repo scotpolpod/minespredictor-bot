@@ -169,7 +169,14 @@ PLANS = [
 user_state = {}  # uid -> 'entering_id' | 'entering_code' | 'entering_broadcast'
 
 # Времена авто-пушей (HH:MM, по UTC+2 — меняй под нужный TZ)
-PUSH_TIMES = ["10:00"]  # 10:00 UTC = 12:00 czasu polskiego (UTC+2)
+PUSH_TIMES      = ["10:00"]   # 10:00 UTC = 12:00 czasu polskiego (UTC+2)
+WHEEL_PUSH_TIME = "07:05"    # 07:05 UTC = 09:05 czasu polskiego — koło fortuny gotowe
+
+WHEEL_MESSAGE = (
+    "🎡 <b>Koło Fortuny jest gotowe!</b>\n\n"
+    "Zakręć teraz i wygraj dodatkowe dni subskrypcji lub sygnały!\n\n"
+    "🍀 Otwórz predyktor i sprawdź swoje szczęście"
+)
 
 INACTIVE_DAYS   = 3          # через сколько дней без активности слать пуш
 INACTIVE_CHECK  = "09:00"    # 09:00 UTC = 11:00 czasu polskiego (UTC+2)
@@ -301,6 +308,10 @@ def push_scheduler():
                     sent_today[push_time] = True
                     msg = random.choice(PUSH_MESSAGES)
                     threading.Thread(target=send_push_to_all, args=(msg,), daemon=True).start()
+            # Wheel of Fortune daily notification
+            if hm == WHEEL_PUSH_TIME and "wheel" not in sent_today:
+                sent_today["wheel"] = True
+                threading.Thread(target=send_push_to_all, args=(WHEEL_MESSAGE,), daemon=True).start()
         except Exception as e:
             print(f"Scheduler error: {e}")
         time.sleep(60)
@@ -734,6 +745,52 @@ def handle_webapp_data(message):
             u = message.from_user
             process_code(uid, code, message.chat.id,
                          username=u.username or "", first_name=u.first_name or "")
+
+    elif payload.get('type') == 'wheel_prize':
+        prize = payload.get('prize', '')
+        value = int(payload.get('value', 0))
+        data  = load_data()
+        user  = data["users"].get(str(uid))
+        if not user:
+            return
+        # Anti-cheat: server-side daily lock
+        today = datetime.now().strftime('%Y-%m-%d')
+        if user.get('wheel_last_spin') == today:
+            bot.send_message(uid, "⚠️ Już dziś kręciłeś kołem fortuny! Wróć jutro 🎡")
+            return
+        user['wheel_last_spin'] = today
+        data["users"][str(uid)] = user
+        save_data(data)
+
+        if prize == 'days' and value > 0:
+            end = user.get('subscription_end')
+            if end and datetime.fromisoformat(end) > datetime.now():
+                new_end = (datetime.fromisoformat(end) + timedelta(days=value)).isoformat()
+            else:
+                new_end = (datetime.now() + timedelta(days=value)).isoformat()
+            data["users"][str(uid)]['subscription_end'] = new_end
+            save_data(data)
+            word    = "dzień" if value == 1 else "dni"
+            new_exp = datetime.fromisoformat(new_end).strftime('%d.%m.%Y')
+            bot.send_message(uid,
+                f"🎡 <b>Koło Fortuny!</b>\n\n"
+                f"🎉 Wygrałeś <b>+{value} {word} subskrypcji</b>!\n"
+                f"📅 Subskrypcja aktywna do: <b>{new_exp}</b>",
+                parse_mode="HTML")
+        elif prize == 'signals' and value > 0:
+            data["users"][str(uid)]['ref_bonus'] = user.get('ref_bonus', 0) + value
+            save_data(data)
+            bot.send_message(uid,
+                f"🎡 <b>Koło Fortuny!</b>\n\n"
+                f"🎉 Wygrałeś <b>+{value} sygnały dziennie</b>!\n"
+                f"📡 Dodatkowe sygnały aktywne w predyktorze 🚀",
+                parse_mode="HTML")
+        else:
+            bot.send_message(uid,
+                f"🎡 <b>Koło Fortuny!</b>\n\n"
+                f"😔 Tym razem bez nagrody...\n"
+                f"Spróbuj jutro — szczęście się uśmiechnie! 🍀",
+                parse_mode="HTML")
 
     elif payload.get('type') == 'win':
         game = payload.get('game', 'mines')
