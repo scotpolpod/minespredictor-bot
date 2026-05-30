@@ -38,6 +38,7 @@ if REDIS_URL:
 # ── SPINBETTER VERIFICATION ───────────────────────────────
 SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "")
 SPINBETTER_USER_ID  = os.getenv("SPINBETTER_USER_ID", "")
+SPINBETTER_COOKIE   = os.getenv("SPINBETTER_COOKIE", "")
 SPINBETTER_CUSTOMER = "casinoz"
 SPINBETTER_CACHE_KEY = "spinbetter_players"
 SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
@@ -75,6 +76,7 @@ def _do_fetch(metrics):
         "X-User-Id":     SPINBETTER_USER_ID,
         "Origin":        "https://panel.spinbetterpartners.com",
         "Referer":       "https://panel.spinbetterpartners.com/",
+        "Cookie":        f"userId={SPINBETTER_COOKIE}" if SPINBETTER_COOKIE else "",
     }
     resp = _requests.post(
         "https://affiliatecontrol-api.com/affiliates/reports",
