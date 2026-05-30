@@ -36,9 +36,9 @@ if REDIS_URL:
         _redis = None
 
 # ── SPINBETTER VERIFICATION ───────────────────────────────
-SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "")
-SPINBETTER_USER_ID  = os.getenv("SPINBETTER_USER_ID", "")
-SPINBETTER_COOKIE   = os.getenv("SPINBETTER_COOKIE", "")
+SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "").strip()
+SPINBETTER_USER_ID  = os.getenv("SPINBETTER_USER_ID", "").strip()
+SPINBETTER_COOKIE   = os.getenv("SPINBETTER_COOKIE", "").strip()
 SPINBETTER_CUSTOMER = "casinoz"
 SPINBETTER_CACHE_KEY = "spinbetter_players"
 SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
