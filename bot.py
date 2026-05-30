@@ -866,38 +866,52 @@ def cmd_checkid(message):
         return
     pid = parts[1].strip()
 
-    # Свежий запрос к SpinBetter
-    bot.send_message(message.chat.id, "⏳ Odpytuję SpinBetter...")
-    refresh_sb_cache()
+    bot.send_message(message.chat.id, "⏳ Odpytuję SpinBetter (raw)...")
 
-    players = _sb_players_cache
-    if _redis:
-        try:
-            raw = _redis.get(SPINBETTER_CACHE_KEY)
-            if raw:
-                players = json.loads(raw)
-        except Exception:
-            pass
+    # Запрос напрямую только по этому игроку
+    try:
+        raw_data = _do_fetch([
+            "registrations_count",
+            "deposits_first_count",
+            "deposits_first_sum",
+            "deposits_all_sum",
+        ])
+        all_rows = raw_data.get("payload", {}).get("data", [])
+        # Найти строку с этим ID
+        row = next((r for r in all_rows if str(r.get("site_player_id", "")) == pid), None)
 
-    exact = players.get(pid)
-
-    # Ищем похожие ID (содержат pid как подстроку)
-    similar = [(k, v) for k, v in players.items() if pid in k or k in pid][:5]
-
-    lines = [f"🔍 Szukam: <code>{pid}</code>", f"📦 Graczy w cache: <b>{len(players)}</b>", ""]
-
-    if exact is not None:
-        lines.append(f"✅ <b>Znaleziono!</b>")
-        lines.append(f"💰 Depozyt: <b>${float(exact):.2f}</b>")
-        lines.append(f"{'✅ Wystarczy' if float(exact) >= MIN_DEPOSIT else f'❌ Za mało (min ${MIN_DEPOSIT})'}")
-    else:
-        lines.append(f"❌ <b>Nie znaleziono</b> dokładnego ID")
-        if similar:
-            lines.append(f"\n🔎 Podobne ID w cache:")
-            for k, v in similar:
-                lines.append(f"  <code>{k}</code> → ${float(v):.2f}")
+        if row:
+            lines = [
+                f"✅ <b>Игрок найден в API!</b>",
+                f"",
+                f"🔑 site_player_id: <code>{row.get('site_player_id')}</code>",
+                f"💰 deposits_all_sum (raw): <code>{row.get('deposits_all_sum')}</code>",
+                f"💰 deposits_first_sum (raw): <code>{row.get('deposits_first_sum')}</code>",
+                f"📊 deposits_first_count: <code>{row.get('deposits_first_count')}</code>",
+                f"",
+                f"➡️ Parsed deposits_all_sum: <b>${_parse_amount(row.get('deposits_all_sum','0')):.2f}</b>",
+            ]
+            dep = _parse_amount(row.get("deposits_all_sum", "0"))
+            if dep == 0:
+                dep = _parse_amount(row.get("deposits_first_sum", "0"))
+                lines.append(f"➡️ Parsed deposits_first_sum: <b>${dep:.2f}</b>")
+            lines.append(f"")
+            lines.append(f"{'✅ Dostęp OK' if dep >= MIN_DEPOSIT else f'❌ Za mało (min ${MIN_DEPOSIT})'}")
         else:
-            lines.append("Brak podobnych ID w cache.")
+            # Найти похожие
+            similar = [r for r in all_rows if pid in str(r.get("site_player_id","")) or str(r.get("site_player_id","")) in pid][:5]
+            lines = [
+                f"❌ <b>ID <code>{pid}</code> не найден в API</b>",
+                f"📦 Всего игроков в ответе: <b>{len(all_rows)}</b>",
+            ]
+            if similar:
+                lines.append("\n🔎 Похожие ID:")
+                for r in similar:
+                    lines.append(f"  <code>{r.get('site_player_id')}</code> → {r.get('deposits_all_sum')}")
+            else:
+                lines.append("Похожих ID нет.")
+    except Exception as e:
+        lines = [f"❌ Ошибка API: <code>{e}</code>"]
 
     bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
