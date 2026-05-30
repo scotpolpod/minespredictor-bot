@@ -852,6 +852,67 @@ def cb_my_sub(call):
         f"🔑 Kod: <code>{code}</code>",
         parse_mode="HTML")
 
+# ── ADMIN: ручная привязка player_id ───────────────────────
+# /setid <tg_user_id> <player_id>
+@bot.message_handler(commands=["setid"])
+def cmd_setid(message):
+    if not is_admin(message):
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 3:
+        bot.send_message(message.chat.id,
+            "❌ Użycie: <code>/setid &lt;tg_id&gt; &lt;player_id&gt;</code>",
+            parse_mode="HTML")
+        return
+    _, tg_id_str, player_id = parts
+    try:
+        tg_uid = int(tg_id_str)
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ tg_id musi być liczbą.")
+        return
+
+    data = load_data()
+    if str(tg_uid) not in data["users"]:
+        bot.send_message(message.chat.id,
+            f"⚠️ Użytkownik <code>{tg_uid}</code> nie istnieje w bazie.\n"
+            "Upewnij się że użytkownik wcześniej korzystał z bota.",
+            parse_mode="HTML")
+        return
+
+    if not is_subscribed(data, tg_uid):
+        bot.send_message(message.chat.id,
+            f"⚠️ Użytkownik <code>{tg_uid}</code> nie ma aktywnej subskrypcji.\n"
+            "Najpierw aktywuj subskrypcję, potem ustaw ID.",
+            parse_mode="HTML")
+        return
+
+    data["users"][str(tg_uid)]["player_id"] = player_id
+    save_data(data)
+
+    dl        = days_left(data, tg_uid)
+    ref_bonus = data["users"][str(tg_uid)].get("ref_bonus", 0)
+    ref_code  = get_ref_code(tg_uid, data)
+    uname     = data["users"][str(tg_uid)].get("username", "")
+    url       = build_url(player_id, dl, uname, ref_bonus, ref_code)
+
+    # Powiadom użytkownika
+    try:
+        bot.send_message(tg_uid,
+            f"✅ Twoje ID zostało potwierdzone!\n\n"
+            f"👇 Otwórz predyktor:",
+            parse_mode="HTML",
+            reply_markup=kb_open_app(url))
+    except Exception as e:
+        print(f"setid notify error: {e}")
+
+    bot.send_message(message.chat.id,
+        f"✅ <b>Ustawiono player_id</b>\n\n"
+        f"👤 TG: <code>{tg_uid}</code>\n"
+        f"🎰 Player ID: <code>{player_id}</code>\n"
+        f"📅 Dni: <b>{dl}</b>",
+        parse_mode="HTML")
+
+
 # ── ADMIN ─────────────────────────────────────────────────
 
 @bot.message_handler(commands=["admin"])
