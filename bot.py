@@ -852,6 +852,56 @@ def cb_my_sub(call):
         f"🔑 Kod: <code>{code}</code>",
         parse_mode="HTML")
 
+# ── ADMIN: диагностика player_id в кэше SpinBetter ─────────
+# /checkid <player_id>
+@bot.message_handler(commands=["checkid"])
+def cmd_checkid(message):
+    if not is_admin(message):
+        return
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        bot.send_message(message.chat.id,
+            "❌ Użycie: <code>/checkid &lt;player_id&gt;</code>",
+            parse_mode="HTML")
+        return
+    pid = parts[1].strip()
+
+    # Свежий запрос к SpinBetter
+    bot.send_message(message.chat.id, "⏳ Odpytuję SpinBetter...")
+    refresh_sb_cache()
+
+    players = _sb_players_cache
+    if _redis:
+        try:
+            raw = _redis.get(SPINBETTER_CACHE_KEY)
+            if raw:
+                players = json.loads(raw)
+        except Exception:
+            pass
+
+    exact = players.get(pid)
+
+    # Ищем похожие ID (содержат pid как подстроку)
+    similar = [(k, v) for k, v in players.items() if pid in k or k in pid][:5]
+
+    lines = [f"🔍 Szukam: <code>{pid}</code>", f"📦 Graczy w cache: <b>{len(players)}</b>", ""]
+
+    if exact is not None:
+        lines.append(f"✅ <b>Znaleziono!</b>")
+        lines.append(f"💰 Depozyt: <b>${float(exact):.2f}</b>")
+        lines.append(f"{'✅ Wystarczy' if float(exact) >= MIN_DEPOSIT else f'❌ Za mało (min ${MIN_DEPOSIT})'}")
+    else:
+        lines.append(f"❌ <b>Nie znaleziono</b> dokładnego ID")
+        if similar:
+            lines.append(f"\n🔎 Podobne ID w cache:")
+            for k, v in similar:
+                lines.append(f"  <code>{k}</code> → ${float(v):.2f}")
+        else:
+            lines.append("Brak podobnych ID w cache.")
+
+    bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
+
+
 # ── ADMIN: ручная привязка player_id ───────────────────────
 # /setid <tg_user_id> <player_id>
 @bot.message_handler(commands=["setid"])
