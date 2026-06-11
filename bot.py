@@ -46,8 +46,11 @@ VAVADA_REFRESH_URL = "https://api.vavadapart.com/auth/token/refresh"
 VAVADA_CACHE_KEY  = "vavada_players"
 VAVADA_CACHE_REFRESH = 180  # секунд (3 минуты)
 
-_vavada_token  = VAVADA_TOKEN   # текущий токен (обновляется автоматически)
-_vavada_cache  = {}             # {login_lower: deposit_usd}
+_vavada_token         = VAVADA_TOKEN          # текущий access token
+_vavada_refresh_token = VAVADA_REFRESH_TOKEN  # текущий refresh token (ротируется)
+_vavada_cache         = {}                    # {login_lower: deposit_usd}
+
+VAVADA_RTOKEN_REDIS_KEY = "vavada_refresh_token"
 
 # GraphQL запрос — получить игроков по одной реферальной ссылке
 _VAVADA_GQL = """
@@ -87,27 +90,53 @@ def _vavada_headers():
     }
 
 def _vavada_try_refresh():
-    """Пробует обновить access token через refresh endpoint."""
-    global _vavada_token
-    if not VAVADA_REFRESH_TOKEN:
+    """Обновляет access token через refresh endpoint (cookie-based)."""
+    global _vavada_token, _vavada_refresh_token
+    # Берём refresh token из памяти или Redis
+    rtoken = _vavada_refresh_token
+    if not rtoken and _redis:
+        try:
+            rtoken = _redis.get(VAVADA_RTOKEN_REDIS_KEY) or ""
+        except Exception:
+            pass
+    if not rtoken:
+        print("Vavada refresh: no refresh token available")
         return False
     try:
         resp = _requests.post(
             VAVADA_REFRESH_URL,
-            json={"refreshToken": VAVADA_REFRESH_TOKEN},
-            headers={"Content-Type": "application/json",
-                     "Origin": "https://affiliates.vavadapart.com"},
+            data=b"",   # пустое тело
+            headers={
+                "Content-Type": "application/json",
+                "Content-Length": "0",
+                "Origin":  "https://affiliates.vavadapart.com",
+                "Referer": "https://affiliates.vavadapart.com/",
+                "Cookie":  f"refresh_token={rtoken}",
+            },
             timeout=15
         )
         if resp.ok:
-            data = resp.json()
-            new_token = (data.get("data", {}).get("token") or
-                         data.get("accessToken") or
-                         data.get("token", ""))
-            if new_token:
-                _vavada_token = new_token.strip()
-                print(f"Vavada token refreshed OK")
-                return True
+            body = resp.json()
+            new_access = body.get("token", "").strip()
+            if new_access:
+                _vavada_token = new_access
+                print("Vavada access token refreshed OK")
+            # Достаём новый refresh token из Set-Cookie
+            set_cookie = resp.headers.get("Set-Cookie", "")
+            for part in set_cookie.split(";"):
+                part = part.strip()
+                if part.startswith("refresh_token="):
+                    new_rtoken = part[len("refresh_token="):]
+                    if new_rtoken:
+                        _vavada_refresh_token = new_rtoken
+                        if _redis:
+                            try:
+                                _redis.set(VAVADA_RTOKEN_REDIS_KEY, new_rtoken)
+                            except Exception:
+                                pass
+                        print("Vavada refresh token rotated OK")
+                    break
+            return bool(new_access)
     except Exception as e:
         print(f"Vavada refresh error: {e}")
     return False
@@ -240,6 +269,16 @@ def sb_scheduler():
         except Exception as e:
             print(f"vavada_scheduler error: {e}")
         time.sleep(VAVADA_CACHE_REFRESH)
+
+def vavada_token_scheduler():
+    """Refreshes Vavada access token every 50 minutes (token TTL = 1h)."""
+    time.sleep(50 * 60)  # первый рефреш через 50 минут после старта
+    while True:
+        try:
+            _vavada_try_refresh()
+        except Exception as e:
+            print(f"vavada_token_scheduler error: {e}")
+        time.sleep(50 * 60)
 
 PLANS = [
     {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
@@ -1520,6 +1559,7 @@ if __name__ == "__main__":
     threading.Thread(target=inactive_scheduler, daemon=True).start()
     threading.Thread(target=sb_scheduler, daemon=True).start()
     threading.Thread(target=intro_scheduler, daemon=True).start()
+    threading.Thread(target=vavada_token_scheduler, daemon=True).start()
     print("Schedulery uruchomione.")
 
     try:
