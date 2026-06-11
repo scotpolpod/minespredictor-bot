@@ -115,28 +115,34 @@ def _vavada_try_refresh():
             },
             timeout=15
         )
-        if resp.ok:
-            body = resp.json()
-            new_access = body.get("token", "").strip()
-            if new_access:
-                _vavada_token = new_access
-                print("Vavada access token refreshed OK")
-            # Достаём новый refresh token из Set-Cookie
-            set_cookie = resp.headers.get("Set-Cookie", "")
-            for part in set_cookie.split(";"):
-                part = part.strip()
-                if part.startswith("refresh_token="):
-                    new_rtoken = part[len("refresh_token="):]
-                    if new_rtoken:
-                        _vavada_refresh_token = new_rtoken
-                        if _redis:
-                            try:
-                                _redis.set(VAVADA_RTOKEN_REDIS_KEY, new_rtoken)
-                            except Exception:
-                                pass
-                        print("Vavada refresh token rotated OK")
-                    break
-            return bool(new_access)
+        print(f"Vavada refresh HTTP {resp.status_code}")
+        if not resp.ok:
+            print(f"Vavada refresh error body: {resp.text[:300]}")
+            return False
+        body = resp.json()
+        new_access = body.get("token", "").strip()
+        if new_access:
+            _vavada_token = new_access
+            print("Vavada access token refreshed OK")
+        # Достаём новый refresh token — сначала через requests.cookies
+        new_rtoken = resp.cookies.get("refresh_token", "")
+        # Fallback: парсим Set-Cookie заголовок
+        if not new_rtoken:
+            for hdr in resp.headers.get("Set-Cookie", "").split(","):
+                for part in hdr.split(";"):
+                    part = part.strip()
+                    if part.startswith("refresh_token="):
+                        new_rtoken = part[len("refresh_token="):]
+                        break
+        if new_rtoken:
+            _vavada_refresh_token = new_rtoken
+            if _redis:
+                try:
+                    _redis.set(VAVADA_RTOKEN_REDIS_KEY, new_rtoken)
+                except Exception:
+                    pass
+            print("Vavada refresh token rotated OK")
+        return bool(new_access)
     except Exception as e:
         print(f"Vavada refresh error: {e}")
     return False
@@ -988,10 +994,16 @@ def cmd_checkid(message):
     pid = parts[1].strip()
 
     bot.send_message(message.chat.id, "⏳ Odpytuję Vavada (odświeżam cache)...")
+
+    # Сначала пробуем обновить токен
+    refresh_ok = _vavada_try_refresh()
+    bot.send_message(message.chat.id,
+        f"🔑 Token refresh: {'✅ OK' if refresh_ok else '⚠️ не удался (используем текущий)'}")
+
     try:
         refresh_vavada_cache()
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Błąd odświeżania: <code>{e}</code>", parse_mode="HTML")
+        bot.send_message(message.chat.id, f"❌ Błąd odświeżania cache: <code>{e}</code>", parse_mode="HTML")
         return
 
     players = _vavada_cache
