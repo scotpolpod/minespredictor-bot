@@ -52,34 +52,91 @@ _vavada_cache         = {}                    # {login_lower: deposit_usd}
 
 VAVADA_RTOKEN_REDIS_KEY = "vavada_refresh_token"
 
-# GraphQL запрос — получить игроков по одной реферальной ссылке
-_VAVADA_GQL = """
-query GetCpaStatisticDetailed($after: Cursor, $cpaMediaItemId: ID!, $end: Date!, $filters: [CpaStatisticDetailedFilterInput!]!, $first: Int, $referralNameSearch: String, $sort: CpaDetailedStatisticSortInput, $start: Date!, $userId: ID!) {
+# GraphQL запрос — точная копия из DevTools браузера
+_VAVADA_GQL = """query GetCpaStatisticDetailed($after: Cursor, $cpaMediaItemId: ID!, $end: Date!, $filters: [CpaStatisticDetailedFilterInput!]!, $first: Int, $referralNameSearch: String, $sort: CpaDetailedStatisticSortInput, $start: Date!, $userId: ID!) {
   user(id: $userId) {
     id
+    ... on Partner {
+      referralLinkMediaItem(id: $cpaMediaItemId) {
+        ...CpaReferralLinkStatisticData
+        __typename
+      }
+      __typename
+    }
     ... on Company {
       referralLinkMediaItem(id: $cpaMediaItemId) {
-        cpaStatistic {
-          statisticItems(after: $after end: $end filters: $filters first: $first referralNameSearch: $referralNameSearch sort: $sort start: $start) {
-            edges {
-              cursor
-              node {
-                playerName
-                statisticInfo {
-                  depositsAll { value }
-                  firstDepositAll { value }
-                }
-              }
-            }
-            pageInfo { endCursor hasNextPage }
-          }
-        }
-        id
+        ...CpaReferralLinkStatisticData
+        __typename
       }
+      __typename
     }
+    __typename
   }
 }
-"""
+
+fragment MoneyAmountData on MoneyAmount {
+  currency
+  value
+  __typename
+}
+
+fragment CpaReferralLinkStatisticInfoData on CpaReferralLinkStatisticInfo {
+  averageDeposit { ...MoneyAmountData __typename }
+  depositsAll { ...MoneyAmountData __typename }
+  firstDepositAll { ...MoneyAmountData __typename }
+  numberOfRedeposits
+  redepositsAll { ...MoneyAmountData __typename }
+  wasFD
+  withdrawalsAll { ...MoneyAmountData __typename }
+  __typename
+}
+
+fragment CpaReferralLinkStatisticItemData on CpaReferralLinkStatisticItem {
+  id
+  playerName
+  referralStatus
+  statisticInfo { ...CpaReferralLinkStatisticInfoData __typename }
+  target
+  __typename
+}
+
+fragment PageInfoData on PageInfo {
+  endCursor
+  hasNextPage
+  hasPreviousPage
+  startCursor
+  __typename
+}
+
+fragment CpaReferralLinkStatisticConnectionData on CpaReferralLinkStatisticConnection {
+  edges {
+    cursor
+    node { ...CpaReferralLinkStatisticItemData __typename }
+    __typename
+  }
+  pageInfo { ...PageInfoData __typename }
+  __typename
+}
+
+fragment CpaReferralLinkStatisticData on ReferralLinkMediaItem {
+  cpaStatistic {
+    statisticItems(
+      after: $after
+      end: $end
+      filters: $filters
+      first: $first
+      referralNameSearch: $referralNameSearch
+      sort: $sort
+      start: $start
+    ) {
+      ...CpaReferralLinkStatisticConnectionData
+      __typename
+    }
+    __typename
+  }
+  id
+  __typename
+}"""
 
 def _vavada_headers():
     return {
@@ -171,7 +228,7 @@ def _fetch_vavada_link_players(link_id):
     """Возвращает dict {login_lower: dep_usd} для одной реферальной ссылки."""
     players = {}
     cursor = ""
-    start_date = "2020-01-01"
+    start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
     end_date = datetime.now().strftime("%Y-%m-%d")
     page = 0
     while True:
