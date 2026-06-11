@@ -35,108 +35,189 @@ if REDIS_URL:
         print(f"Redis błąd połączenia: {_e}")
         _redis = None
 
-# ── SPINBETTER VERIFICATION ───────────────────────────────
-SPINBETTER_TOKEN    = os.getenv("SPINBETTER_TOKEN", "").strip()
-SPINBETTER_USER_ID  = os.getenv("SPINBETTER_USER_ID", "").strip()
-SPINBETTER_COOKIE   = os.getenv("SPINBETTER_COOKIE", "").strip()
-SPINBETTER_CUSTOMER = "casinoz"
-SPINBETTER_CACHE_KEY = "spinbetter_players"
-SPINBETTER_REFRESH  = 180  # секунд (3 минуты)
+# ── VAVADA VERIFICATION ───────────────────────────────────
+VAVADA_TOKEN      = os.getenv("VAVADA_TOKEN", "").strip()
+VAVADA_REFRESH_TOKEN = os.getenv("VAVADA_REFRESH_TOKEN", "").strip()
+VAVADA_USER_ID    = os.getenv("VAVADA_USER_ID", "7e97d47a-a531-4b6e-966f-94a67b462c94").strip()
+# Comma-separated referral link IDs from Vavada Partners panel
+VAVADA_LINK_IDS   = [x.strip() for x in os.getenv("VAVADA_LINK_IDS", "bc250ff7-01ae-4903-a18e-e4ca67f77e45").split(",") if x.strip()]
+VAVADA_API_URL    = "https://api.vavadapart.com/graphql"
+VAVADA_REFRESH_URL = "https://api.vavadapart.com/auth/token/refresh"
+VAVADA_CACHE_KEY  = "vavada_players"
+VAVADA_CACHE_REFRESH = 180  # секунд (3 минуты)
 
-# in-memory fallback если Redis недоступен
-# {player_id: True/False} где True = есть депозит
-_sb_players_cache = {}
+_vavada_token  = VAVADA_TOKEN   # текущий токен (обновляется автоматически)
+_vavada_cache  = {}             # {login_lower: deposit_usd}
 
-def _parse_amount(raw):
-    """Парсит сумму вида '$13.70' или '13.70' → float."""
-    try:
-        return float(str(raw).replace("$", "").replace(",", ".").strip())
-    except Exception:
-        return 0.0
-
-def _do_fetch(metrics):
-    """Выполняет один запрос к SpinBetter API с заданными метриками."""
-    payload = {
-        "dimensions": ["site_player_id"],
-        "filters": {},
-        "from": "2020-01-01 00:00:00",
-        "to":   datetime.now().strftime("%Y-%m-%d 23:59:59"),
-        "having": {},
-        "limit": 1000,
-        "metrics": metrics,
-        "metrics_format": "pretty",
-        "offset": 0,
-        "search": {},
-        "sorting": [{"sort_by": "site_player_id", "sort_dir": "desc"}],
+# GraphQL запрос — получить игроков по одной реферальной ссылке
+_VAVADA_GQL = """
+query GetCpaStatisticDetailed($after: Cursor, $cpaMediaItemId: ID!, $end: Date!, $filters: [CpaStatisticDetailedFilterInput!]!, $first: Int, $referralNameSearch: String, $sort: CpaDetailedStatisticSortInput, $start: Date!, $userId: ID!) {
+  user(id: $userId) {
+    id
+    ... on Company {
+      referralLinkMediaItem(id: $cpaMediaItemId) {
+        cpaStatistic {
+          statisticItems(after: $after end: $end filters: $filters first: $first referralNameSearch: $referralNameSearch sort: $sort start: $start) {
+            edges {
+              cursor
+              node {
+                playerName
+                statisticInfo {
+                  depositsAll { value }
+                  firstDepositAll { value }
+                }
+              }
+            }
+            pageInfo { endCursor hasNextPage }
+          }
+        }
+        id
+      }
     }
-    headers = {
-        "Authorization": SPINBETTER_TOKEN,
+  }
+}
+"""
+
+def _vavada_headers():
+    return {
+        "Authorization": f"Bearer {_vavada_token}",
         "Content-Type":  "application/json",
-        "X-Customer-Id": SPINBETTER_CUSTOMER,
-        "X-User-Id":     SPINBETTER_USER_ID,
-        "Origin":        "https://panel.spinbetterpartners.com",
-        "Referer":       "https://panel.spinbetterpartners.com/",
-        "Cookie":        f"userId={SPINBETTER_COOKIE}" if SPINBETTER_COOKIE else "",
+        "Origin":        "https://affiliates.vavadapart.com",
+        "Referer":       "https://affiliates.vavadapart.com/",
     }
+
+def _vavada_try_refresh():
+    """Пробует обновить access token через refresh endpoint."""
+    global _vavada_token
+    if not VAVADA_REFRESH_TOKEN:
+        return False
+    try:
+        resp = _requests.post(
+            VAVADA_REFRESH_URL,
+            json={"refreshToken": VAVADA_REFRESH_TOKEN},
+            headers={"Content-Type": "application/json",
+                     "Origin": "https://affiliates.vavadapart.com"},
+            timeout=15
+        )
+        if resp.ok:
+            data = resp.json()
+            new_token = (data.get("data", {}).get("token") or
+                         data.get("accessToken") or
+                         data.get("token", ""))
+            if new_token:
+                _vavada_token = new_token.strip()
+                print(f"Vavada token refreshed OK")
+                return True
+    except Exception as e:
+        print(f"Vavada refresh error: {e}")
+    return False
+
+def _vavada_gql(variables, retry=True):
+    """Выполняет GraphQL запрос. При 401 пробует обновить токен."""
+    global _vavada_token
     resp = _requests.post(
-        "https://affiliatecontrol-api.com/affiliates/reports",
-        json=payload, headers=headers, timeout=20
+        VAVADA_API_URL,
+        json={"operationName": "GetCpaStatisticDetailed",
+              "query": _VAVADA_GQL,
+              "variables": variables},
+        headers=_vavada_headers(),
+        timeout=20
     )
-    print(f"SpinBetter API status: {resp.status_code}")
+    if resp.status_code == 401 and retry:
+        print("Vavada 401 — trying token refresh...")
+        if _vavada_try_refresh():
+            return _vavada_gql(variables, retry=False)
     if not resp.ok:
-        print(f"SpinBetter API error body: {resp.text[:300]}")
+        print(f"Vavada API error {resp.status_code}: {resp.text[:300]}")
     resp.raise_for_status()
     return resp.json()
 
-def fetch_spinbetter_players():
-    """Загружает игроков из SpinBetter. Возвращает dict {pid: total_dep_usd}."""
-    try:
-        # deposits_all_sum = сумма всех депозитов (FD + RD)
-        data = _do_fetch([
-            "registrations_count",
-            "deposits_first_count",
-            "deposits_first_sum",
-            "deposits_all_sum",
-        ])
-        players = {}
-        for item in data.get("payload", {}).get("data", []):
-            pid = item.get("site_player_id")
-            if not pid or pid == "Незарегистрированный":
+def _fetch_vavada_link_players(link_id):
+    """Возвращает dict {login_lower: dep_usd} для одной реферальной ссылки."""
+    players = {}
+    cursor = ""
+    start_date = "2020-01-01"
+    end_date = datetime.now().strftime("%Y-%m-%d")
+    page = 0
+    while True:
+        variables = {
+            "after":          cursor,
+            "cpaMediaItemId": link_id,
+            "end":            end_date,
+            "filters":        [],
+            "first":          200,
+            "referralNameSearch": None,
+            "sort":           {"orderBy": "DEPOSITS_ALL", "sortOrder": "DESC"},
+            "start":          start_date,
+            "userId":         VAVADA_USER_ID,
+        }
+        data = _vavada_gql(variables)
+        items = (data.get("data", {})
+                     .get("user", {})
+                     .get("referralLinkMediaItem", {})
+                     .get("cpaStatistic", {})
+                     .get("statisticItems", {}))
+        edges = items.get("edges", [])
+        for edge in edges:
+            node = edge.get("node", {})
+            name = node.get("playerName", "")
+            if not name:
                 continue
-            total = _parse_amount(item.get("deposits_all_sum", "$0.00"))
-            if total == 0.0:
-                total = _parse_amount(item.get("deposits_first_sum", "$0.00"))
-            players[str(pid)] = total
-        print(f"SpinBetter: {len(players)} players loaded.")
-        return players
-    except Exception as e:
-        print(f"SpinBetter fetch error: {e}")
+            dep = float(node.get("statisticInfo", {})
+                            .get("depositsAll", {})
+                            .get("value", 0) or 0)
+            if dep == 0:
+                dep = float(node.get("statisticInfo", {})
+                                .get("firstDepositAll", {})
+                                .get("value", 0) or 0)
+            players[name.lower()] = max(players.get(name.lower(), 0.0), dep)
+        page_info = items.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor", "")
+        page += 1
+        if page > 20:   # защита от бесконечного цикла
+            break
+    return players
+
+def fetch_vavada_players():
+    """Загружает всех игроков по всем ссылкам. Возвращает {login_lower: dep_usd}."""
+    if not VAVADA_TOKEN and not _vavada_token:
         return None
+    all_players = {}
+    for link_id in VAVADA_LINK_IDS:
+        try:
+            p = _fetch_vavada_link_players(link_id)
+            all_players.update(p)
+            print(f"Vavada link {link_id[:8]}...: {len(p)} players")
+        except Exception as e:
+            print(f"Vavada fetch error (link {link_id[:8]}...): {e}")
+    return all_players if all_players else None
 
-
-def refresh_sb_cache():
-    global _sb_players_cache
-    players = fetch_spinbetter_players()
+def refresh_vavada_cache():
+    global _vavada_cache
+    players = fetch_vavada_players()
     if players is None:
         return
-    _sb_players_cache = players
+    _vavada_cache = players
     if _redis:
         try:
-            _redis.set(SPINBETTER_CACHE_KEY, json.dumps(players))
+            _redis.set(VAVADA_CACHE_KEY, json.dumps(players))
         except Exception as e:
-            print(f"SpinBetter Redis save error: {e}")
+            print(f"Vavada Redis save error: {e}")
+    print(f"Vavada cache updated: {len(players)} players total")
 
-MIN_DEPOSIT = 20.0  # ~80 zł в USD (deposits_all_sum = все депозиты FD+RD)
+MIN_DEPOSIT = 20.0  # ~80 zł в USD
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
-    if not SPINBETTER_TOKEN:
-        return "ok"
-    pid = str(player_id).strip()
-    players = _sb_players_cache
+    if not VAVADA_TOKEN and not _vavada_token:
+        return "ok"   # верификация отключена — пропускаем всех
+    pid = str(player_id).strip().lower()
+    players = _vavada_cache
     if _redis:
         try:
-            raw = _redis.get(SPINBETTER_CACHE_KEY)
+            raw = _redis.get(VAVADA_CACHE_KEY)
             if raw:
                 players = json.loads(raw)
         except Exception:
@@ -152,13 +233,13 @@ def check_player(player_id):
     return ("no_deposit", dep)
 
 def sb_scheduler():
-    """Updates SpinBetter cache every 3 minutes."""
+    """Updates Vavada cache every 3 minutes."""
     while True:
         try:
-            refresh_sb_cache()
+            refresh_vavada_cache()
         except Exception as e:
-            print(f"sb_scheduler error: {e}")
-        time.sleep(SPINBETTER_REFRESH)
+            print(f"vavada_scheduler error: {e}")
+        time.sleep(VAVADA_CACHE_REFRESH)
 
 PLANS = [
     {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
@@ -448,7 +529,7 @@ def cmd_start(message):
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
-                f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+                f"🔢 Wpisz swój <b>login</b> z kasyna Vavada:",
                 parse_mode="HTML")
     else:
         user = data["users"].setdefault(str(uid), {})
@@ -612,7 +693,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
             f"🎉 Subskrypcja aktywowana!\n\n"
             f"📅 Plan: <b>{days} dni</b>\n"
             f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
-            f"🔢 Wpisz swoje <b>ID gracza</b> z kasyna:",
+            f"🔢 Wpisz swój <b>login</b> z kasyna Vavada:",
             parse_mode="HTML")
 
 # ── REFERRAL SYSTEM ──────────────────────────────────────
@@ -676,21 +757,20 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    # Всегда делаем свежий запрос к SpinBetter при вводе ID
-    # (избегаем ситуации когда кэш устарел и депозит ещё не подтянулся)
-    refresh_sb_cache()
+    # Свежий запрос к Vavada при вводе логина
+    refresh_vavada_cache()
     sb_status = check_player(player_id)
 
     if sb_status == "not_found":
         bot.send_message(uid,
-            "❌ <b>Nie znaleziono takiego ID.</b>\n\n"
-            "Sprawdź czy wpisałeś poprawny numer — możesz go znaleźć w swoim profilu SpinBetter.\n\n"
+            "❌ <b>Nie znaleziono takiego loginu.</b>\n\n"
+            "Sprawdź czy wpisałeś poprawny login z kasyna Vavada.\n\n"
             "Jeśli właśnie założyłeś konto — poczekaj chwilę i spróbuj ponownie 🔄",
             parse_mode="HTML")
         return
     if isinstance(sb_status, tuple) and sb_status[0] == "no_deposit":
         dep_usd  = sb_status[1]
-        dep_pln  = round(dep_usd * 4.0)   # примерный курс $1 ≈ 4 zł
+        dep_pln  = round(dep_usd * 4.0)
         need_usd = MIN_DEPOSIT - dep_usd
         need_pln = round(need_usd * 4.0)
         if dep_usd > 0:
@@ -698,14 +778,14 @@ def msg_id(message):
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
                 f"🎯 Wymagane minimum: <b>~80 zł</b>\n\n"
-                f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SpinBetter "
-                f"i wyślij swoje <b>ID ponownie</b> 🔄",
+                f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w Vavada "
+                f"i wyślij swój <b>login ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w SpinBetter.\n\n"
-                f"Po wpłacie wyślij swoje <b>ID ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w Vavada.\n\n"
+                f"Po wpłacie wyślij swój <b>login ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
 
@@ -825,7 +905,7 @@ def cb_change_id(call):
         return
     user_state[uid] = "entering_id"
     try:
-        bot.send_message(uid, "🔢 Wpisz nowe <b>ID gracza</b>:", parse_mode="HTML")
+        bot.send_message(uid, "🔢 Wpisz nowy <b>login Vavada</b>:", parse_mode="HTML")
     except Exception as e:
         print(f"cb_change_id error: {e}")
     bot.answer_callback_query(call.id)
@@ -854,8 +934,8 @@ def cb_my_sub(call):
         f"🔑 Kod: <code>{code}</code>",
         parse_mode="HTML")
 
-# ── ADMIN: диагностика player_id в кэше SpinBetter ─────────
-# /checkid <player_id>
+# ── ADMIN: диагностика player login в кэше Vavada ──────────
+# /checkid <player_login>
 @bot.message_handler(commands=["checkid"])
 def cmd_checkid(message):
     if not is_admin(message):
@@ -863,57 +943,47 @@ def cmd_checkid(message):
     parts = message.text.strip().split()
     if len(parts) < 2:
         bot.send_message(message.chat.id,
-            "❌ Użycie: <code>/checkid &lt;player_id&gt;</code>",
+            "❌ Użycie: <code>/checkid &lt;login_gracza&gt;</code>",
             parse_mode="HTML")
         return
     pid = parts[1].strip()
 
-    bot.send_message(message.chat.id, "⏳ Odpytuję SpinBetter (raw)...")
-
-    # Запрос напрямую только по этому игроку
+    bot.send_message(message.chat.id, "⏳ Odpytuję Vavada (odświeżam cache)...")
     try:
-        raw_data = _do_fetch([
-            "registrations_count",
-            "deposits_first_count",
-            "deposits_first_sum",
-            "deposits_all_sum",
-        ])
-        all_rows = raw_data.get("payload", {}).get("data", [])
-        # Найти строку с этим ID
-        row = next((r for r in all_rows if str(r.get("site_player_id", "")) == pid), None)
-
-        if row:
-            lines = [
-                f"✅ <b>Игрок найден в API!</b>",
-                f"",
-                f"🔑 site_player_id: <code>{row.get('site_player_id')}</code>",
-                f"💰 deposits_all_sum (raw): <code>{row.get('deposits_all_sum')}</code>",
-                f"💰 deposits_first_sum (raw): <code>{row.get('deposits_first_sum')}</code>",
-                f"📊 deposits_first_count: <code>{row.get('deposits_first_count')}</code>",
-                f"",
-                f"➡️ Parsed deposits_all_sum: <b>${_parse_amount(row.get('deposits_all_sum','0')):.2f}</b>",
-            ]
-            dep = _parse_amount(row.get("deposits_all_sum", "0"))
-            if dep == 0:
-                dep = _parse_amount(row.get("deposits_first_sum", "0"))
-                lines.append(f"➡️ Parsed deposits_first_sum: <b>${dep:.2f}</b>")
-            lines.append(f"")
-            lines.append(f"{'✅ Dostęp OK' if dep >= MIN_DEPOSIT else f'❌ Za mało (min ${MIN_DEPOSIT})'}")
-        else:
-            # Найти похожие
-            similar = [r for r in all_rows if pid in str(r.get("site_player_id","")) or str(r.get("site_player_id","")) in pid][:5]
-            lines = [
-                f"❌ <b>ID <code>{pid}</code> не найден в API</b>",
-                f"📦 Всего игроков в ответе: <b>{len(all_rows)}</b>",
-            ]
-            if similar:
-                lines.append("\n🔎 Похожие ID:")
-                for r in similar:
-                    lines.append(f"  <code>{r.get('site_player_id')}</code> → {r.get('deposits_all_sum')}")
-            else:
-                lines.append("Похожих ID нет.")
+        refresh_vavada_cache()
     except Exception as e:
-        lines = [f"❌ Ошибка API: <code>{e}</code>"]
+        bot.send_message(message.chat.id, f"❌ Błąd odświeżania: <code>{e}</code>", parse_mode="HTML")
+        return
+
+    players = _vavada_cache
+    if _redis:
+        try:
+            raw = _redis.get(VAVADA_CACHE_KEY)
+            if raw:
+                players = json.loads(raw)
+        except Exception:
+            pass
+
+    pid_lower = pid.lower()
+    dep = players.get(pid_lower)
+
+    lines = [f"🔍 Szukam: <code>{pid}</code>", f"📦 Graczy w cache: <b>{len(players)}</b>", ""]
+
+    if dep is not None:
+        dep = float(dep)
+        lines.append(f"✅ <b>Znaleziono!</b>")
+        lines.append(f"💰 Depozyt: <b>${dep:.2f}</b>")
+        lines.append(f"{'✅ Dostęp OK' if dep >= MIN_DEPOSIT else f'❌ Za mało (min ${MIN_DEPOSIT:.0f}$)'}")
+    else:
+        # похожие логины
+        similar = [(k, v) for k, v in players.items() if pid_lower in k or k in pid_lower][:5]
+        lines.append(f"❌ <b>Login <code>{pid}</code> nie znaleziony</b>")
+        if similar:
+            lines.append("\n🔎 Podobne loginy:")
+            for k, v in similar:
+                lines.append(f"  <code>{k}</code> → ${float(v):.2f}")
+        else:
+            lines.append("Brak podobnych loginów w cache.")
 
     bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
