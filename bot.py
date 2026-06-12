@@ -16,11 +16,19 @@ BOT_TOKEN      = os.getenv("BOT_TOKEN")
 WEBAPP_URL     = os.getenv("WEBAPP_URL")
 BOT_USERNAME   = os.getenv("BOT_USERNAME", "")   # e.g. "MinesPredictorBot"
 ADMIN_USERNAME = "rmpl13"
+ADMIN_ID       = int(os.getenv("ADMIN_ID", "0"))  # числовой Telegram ID админа
 MANAGER_LINK   = "https://t.me/rmpl13"
 DATA_FILE      = "data.json"
 VIP_USERNAMES  = ["iiiiiigggggg", "S_V_V1"]
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+def notify_admin(text):
+    if ADMIN_ID:
+        try:
+            bot.send_message(ADMIN_ID, text, parse_mode="HTML")
+        except Exception as e:
+            print(f"notify_admin error: {e}")
 
 # ── REDIS (опционально) ───────────────────────────────────
 _redis = None
@@ -357,7 +365,14 @@ def vavada_token_scheduler():
     time.sleep(50 * 60)  # первый рефреш через 50 минут после старта
     while True:
         try:
-            _vavada_try_refresh()
+            ok = _vavada_try_refresh()
+            if not ok:
+                notify_admin(
+                    "🚨 <b>Vavada token refresh FAILED!</b>\n\n"
+                    "Refresh token wygasł lub jest nieprawidłowy.\n\n"
+                    "Zaloguj się na <b>affiliates.vavadapart.com</b>, skopiuj nowy "
+                    "<code>refresh_token</code> z DevTools (Cookies) i zaktualizuj "
+                    "zmienną <b>VAVADA_REFRESH_TOKEN</b> w Railway.")
         except Exception as e:
             print(f"vavada_token_scheduler error: {e}")
         time.sleep(50 * 60)
@@ -882,18 +897,32 @@ def msg_id(message):
     refresh_vavada_cache()
     sb_status = check_player(player_id)
 
+    uname_str = f"@{message.from_user.username}" if message.from_user.username else f"tg_id={uid}"
+
     if sb_status == "not_found":
         bot.send_message(uid,
             "❌ <b>Nie znaleziono takiego loginu.</b>\n\n"
             "Sprawdź czy wpisałeś poprawny login z kasyna Vavada.\n\n"
             "Jeśli właśnie założyłeś konto — poczekaj chwilę i spróbuj ponownie 🔄",
             parse_mode="HTML")
+        notify_admin(
+            f"⚠️ <b>Brak gracza w Vavada</b>\n\n"
+            f"👤 User: {uname_str} (id={uid})\n"
+            f"🔑 Login Vavada: <code>{player_id}</code>\n\n"
+            f"Możliwe: błędny login lub gracz nie jest w Twoim linku.\n"
+            f"Użyj /setid {uid} {player_id} aby przyznać dostęp ręcznie.")
         return
     if isinstance(sb_status, tuple) and sb_status[0] == "no_deposit":
         dep_usd  = sb_status[1]
         dep_pln  = round(dep_usd * 4.0)
         need_usd = MIN_DEPOSIT - dep_usd
         need_pln = round(need_usd * 4.0)
+        notify_admin(
+            f"💰 <b>Za mały depozyt</b>\n\n"
+            f"👤 User: {uname_str} (id={uid})\n"
+            f"🔑 Login Vavada: <code>{player_id}</code>\n"
+            f"💵 Depozyt: <b>${dep_usd:.2f}</b> / wymagane ${MIN_DEPOSIT:.0f}\n"
+            f"Brakuje: ~{need_pln} zł")
         if dep_usd > 0:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
