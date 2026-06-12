@@ -241,7 +241,7 @@ def _fetch_vavada_link_players(link_id):
     """Возвращает dict {login_lower: dep_usd} для одной реферальной ссылки."""
     players = {}
     cursor = ""
-    start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
     end_date = datetime.now().strftime("%Y-%m-%d")
     page = 0
     while True:
@@ -1108,7 +1108,7 @@ def cmd_checkid(message):
 
     # Диагностика: сырой первый запрос к API
     try:
-        start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
         end_date   = datetime.now().strftime("%Y-%m-%d")
         diag_vars = {
             "after": "", "cpaMediaItemId": VAVADA_LINK_IDS[0],
