@@ -240,7 +240,7 @@ def _vavada_gql(variables, retry=True):
 def _fetch_vavada_link_players(link_id):
     """Возвращает dict {login_lower: dep_usd} для одной реферальной ссылки."""
     players = {}
-    cursor = ""
+    cursor = None
     start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
     end_date = datetime.now().strftime("%Y-%m-%d")
     page = 0
@@ -1111,7 +1111,7 @@ def cmd_checkid(message):
         start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
         end_date   = datetime.now().strftime("%Y-%m-%d")
         diag_vars = {
-            "after": "", "cpaMediaItemId": VAVADA_LINK_IDS[0],
+            "after": None, "cpaMediaItemId": VAVADA_LINK_IDS[0],
             "end": end_date, "filters": [], "first": 5,
             "referralNameSearch": None,
             "sort": {"orderBy": "DEPOSITS_ALL", "sortOrder": "DESC"},
