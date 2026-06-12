@@ -52,6 +52,18 @@ _vavada_cache         = {}                    # {login_lower: deposit_usd}
 
 VAVADA_RTOKEN_REDIS_KEY = "vavada_refresh_token"
 
+def _vavada_init_tokens():
+    """При старте берём свежий refresh token из Redis если он там есть."""
+    global _vavada_refresh_token
+    if _redis:
+        try:
+            saved = _redis.get(VAVADA_RTOKEN_REDIS_KEY)
+            if saved:
+                _vavada_refresh_token = saved
+                print("Vavada: refresh token loaded from Redis")
+        except Exception as e:
+            print(f"Vavada: could not load refresh token from Redis: {e}")
+
 # GraphQL запрос — точная копия из DevTools браузера
 _VAVADA_GQL = """query GetCpaStatisticDetailed($after: Cursor, $cpaMediaItemId: ID!, $end: Date!, $filters: [CpaStatisticDetailedFilterInput!]!, $first: Int, $referralNameSearch: String, $sort: CpaDetailedStatisticSortInput, $start: Date!, $userId: ID!) {
   user(id: $userId) {
@@ -1623,6 +1635,8 @@ if __name__ == "__main__":
             print(f"Bot username: @{BOT_USERNAME}")
         except Exception as _e:
             print(f"Could not fetch bot username: {_e}")
+
+    _vavada_init_tokens()  # загрузить свежий refresh token из Redis
 
     threading.Thread(target=push_scheduler, daemon=True).start()
     threading.Thread(target=inactive_scheduler, daemon=True).start()
