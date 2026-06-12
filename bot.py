@@ -298,12 +298,19 @@ def fetch_vavada_players():
             print(f"Vavada fetch error (link {link_id[:8]}...): {e}")
     return all_players if all_players else None
 
-def refresh_vavada_cache():
-    global _vavada_cache
+_vavada_cache_ts = 0.0
+VAVADA_CACHE_TTL = 180  # секунд
+
+def refresh_vavada_cache(force=False):
+    global _vavada_cache, _vavada_cache_ts
+    import time as _time
+    if not force and (_time.time() - _vavada_cache_ts) < VAVADA_CACHE_TTL:
+        return  # кеш ещё свежий
     players = fetch_vavada_players()
     if players is None:
         return
     _vavada_cache = players
+    _vavada_cache_ts = _time.time()
     if _redis:
         try:
             _redis.set(VAVADA_CACHE_KEY, json.dumps(players))
@@ -1070,7 +1077,7 @@ def cmd_checkid(message):
         f"🔑 Token refresh: {'✅ OK' if refresh_ok else '⚠️ не удался (используем текущий)'}")
 
     try:
-        refresh_vavada_cache()
+        refresh_vavada_cache(force=True)
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Błąd odświeżania cache: <code>{e}</code>", parse_mode="HTML")
         return
