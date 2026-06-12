@@ -227,6 +227,7 @@ def _vavada_gql(variables, retry=True):
         headers=_vavada_headers(),
         timeout=20
     )
+    print(f"Vavada GQL status={resp.status_code} body={resp.text[:500]}")
     if resp.status_code == 401 and retry:
         print("Vavada 401 — trying token refresh...")
         if _vavada_try_refresh():
@@ -1104,6 +1105,29 @@ def cmd_checkid(message):
                 lines.append(f"  <code>{k}</code> → ${float(v):.2f}")
         else:
             lines.append("Brak podobnych loginów w cache.")
+
+    # Диагностика: сырой первый запрос к API
+    try:
+        start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
+        end_date   = datetime.now().strftime("%Y-%m-%d")
+        diag_vars = {
+            "after": "", "cpaMediaItemId": VAVADA_LINK_IDS[0],
+            "end": end_date, "filters": [], "first": 5,
+            "referralNameSearch": None,
+            "sort": {"orderBy": "DEPOSITS_ALL", "sortOrder": "DESC"},
+            "start": start_date, "userId": VAVADA_USER_ID,
+        }
+        raw_resp = _requests.post(
+            VAVADA_API_URL,
+            json={"operationName": "GetCpaStatisticDetailed",
+                  "query": _VAVADA_GQL, "variables": diag_vars},
+            headers=_vavada_headers(), timeout=20
+        )
+        raw_text = raw_resp.text[:800]
+        lines.append(f"\n🔬 <b>RAW API response (status={raw_resp.status_code}):</b>")
+        lines.append(f"<code>{raw_text}</code>")
+    except Exception as diag_e:
+        lines.append(f"\n🔬 Diag error: {diag_e}")
 
     bot.send_message(message.chat.id, "\n".join(lines), parse_mode="HTML")
 
