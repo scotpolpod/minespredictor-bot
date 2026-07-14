@@ -667,7 +667,7 @@ def cmd_start(message):
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
                 f"📸 Wyślij <b>zrzut ekranu potwierdzenia wpłaty</b> w SlotsGems, "
-                f"aby odblokować dostęp. Administrator zweryfikuje i przyzna dostęp 🔄",
+                f"aby odblokować dostęp. Dostęp zostanie przyznany automatycznie po weryfikacji ✅",
                 parse_mode="HTML")
     else:
         user = data["users"].setdefault(str(uid), {})
@@ -833,7 +833,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
             f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
             f"📸 Aby odblokować dostęp — dokonaj wpłaty w kasynie SlotsGems "
             f"i wyślij tutaj <b>zrzut ekranu potwierdzenia wpłaty</b>.\n\n"
-            f"Administrator zweryfikuje i przyzna dostęp 🔄",
+            f"Dostęp zostanie przyznany automatycznie po weryfikacji ✅",
             parse_mode="HTML")
 
 # ── REFERRAL SYSTEM ──────────────────────────────────────
@@ -899,8 +899,8 @@ def msg_screenshot(message):
 
     bot.send_message(uid,
         "✅ Zrzut ekranu otrzymany!\n\n"
-        "⏳ Administrator zweryfikuje wpłatę i przyzna dostęp. "
-        "Zazwyczaj zajmuje to kilka minut.",
+        "⏳ Zrzut ekranu jest weryfikowany. "
+        "Dostęp zostanie przyznany automatycznie ✅",
         parse_mode="HTML")
 
     if not ADMIN_ID:
