@@ -1237,6 +1237,32 @@ def cmd_checkid(message):
 
 
 # ── ADMIN: ручная привязка player_id ───────────────────────
+# /deleteuser <tg_id or @username>
+@bot.message_handler(commands=["deleteuser"])
+def cmd_deleteuser(message):
+    if not is_admin(message):
+        return
+    parts = message.text.strip().split()
+    if len(parts) != 2:
+        bot.send_message(message.chat.id,
+            "❌ Użycie: <code>/deleteuser &lt;tg_id lub @username&gt;</code>",
+            parse_mode="HTML")
+        return
+    target = parts[1].lstrip("@").lower()
+    data = load_data()
+    found_key = None
+    for key, user in data["users"].items():
+        if key == target or str(user.get("tg_id", "")) == target or (user.get("username") or "").lower() == target:
+            found_key = key
+            break
+    if not found_key:
+        bot.send_message(message.chat.id, f"❌ Nie znaleziono użytkownika: <code>{target}</code>", parse_mode="HTML")
+        return
+    del data["users"][found_key]
+    save_data(data)
+    bot.send_message(message.chat.id, f"✅ Użytkownik <code>{found_key}</code> usunięty z bazy.", parse_mode="HTML")
+
+
 # /setid <tg_user_id> <player_id>
 @bot.message_handler(commands=["setid"])
 def cmd_setid(message):
