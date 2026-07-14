@@ -662,11 +662,12 @@ def cmd_start(message):
                 parse_mode="HTML",
                 reply_markup=kb_open_app(url))
         else:
-            user_state[uid] = "entering_id"
+            user_state[uid] = "waiting_screenshot"
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
-                f"🔢 Wpisz swój <b>login</b> z kasyna SlotsGems:",
+                f"📸 Wyślij <b>zrzut ekranu potwierdzenia wpłaty</b> w SlotsGems, "
+                f"aby odblokować dostęp. Administrator zweryfikuje i przyzna dostęp 🔄",
                 parse_mode="HTML")
     else:
         user = data["users"].setdefault(str(uid), {})
@@ -825,12 +826,14 @@ def process_code(uid, code, chat_id, username="", first_name=""):
             f"👇 Otwórz predyktor:",
             parse_mode="HTML", reply_markup=kb_open_app(url))
     else:
-        user_state[uid] = "entering_id"
+        user_state[uid] = "waiting_screenshot"
         bot.send_message(chat_id,
             f"🎉 Subskrypcja aktywowana!\n\n"
             f"📅 Plan: <b>{days} dni</b>\n"
             f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
-            f"🔢 Wpisz swój <b>login</b> z kasyna SlotsGems:",
+            f"📸 Aby odblokować dostęp — dokonaj wpłaty w kasynie SlotsGems "
+            f"i wyślij tutaj <b>zrzut ekranu potwierdzenia wpłaty</b>.\n\n"
+            f"Administrator zweryfikuje i przyzna dostęp 🔄",
             parse_mode="HTML")
 
 # ── REFERRAL SYSTEM ──────────────────────────────────────
@@ -876,6 +879,94 @@ def cmd_ref(message):
         f"Możesz też udostępnić link z zakładki <b>Konto</b> w mini apce 👇",
         parse_mode="HTML",
         disable_web_page_preview=True)
+
+# ── SCREENSHOT VERIFICATION ───────────────────────────────
+
+@bot.message_handler(
+    content_types=["photo"],
+    func=lambda m: user_state.get(m.from_user.id) == "waiting_screenshot"
+)
+def msg_screenshot(message):
+    uid = message.from_user.id
+    data = load_data()
+    if not is_subscribed(data, uid):
+        bot.send_message(uid, "🔒 Twoja subskrypcja wygasła. Użyj /start aby odnowić.")
+        user_state.pop(uid, None)
+        return
+
+    uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
+    name_str  = message.from_user.first_name or ""
+
+    bot.send_message(uid,
+        "✅ Zrzut ekranu otrzymany!\n\n"
+        "⏳ Administrator zweryfikuje wpłatę i przyzna dostęp. "
+        "Zazwyczaj zajmuje to kilka minut.",
+        parse_mode="HTML")
+
+    if not ADMIN_ID:
+        return
+
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("✅ Zatwierdź dostęp", callback_data=f"approve_{uid}"),
+        InlineKeyboardButton("❌ Odrzuć", callback_data=f"reject_{uid}")
+    )
+    caption = (
+        f"📸 <b>Nowy zrzut ekranu wpłaty</b>\n\n"
+        f"👤 {name_str} {uname_str}\n"
+        f"🆔 Telegram ID: <code>{uid}</code>\n\n"
+        f"Zatwierdź lub odrzuć dostęp:"
+    )
+    bot.forward_message(ADMIN_ID, uid, message.message_id)
+    bot.send_message(ADMIN_ID, caption, parse_mode="HTML", reply_markup=kb)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("approve_") or c.data.startswith("reject_"))
+def cb_approve_reject(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak uprawnień.")
+        return
+
+    action, target_uid_str = call.data.split("_", 1)
+    target_uid = int(target_uid_str)
+    data = load_data()
+
+    if action == "approve":
+        # Используем tg_id как player_id если нет другого
+        user = data["users"].get(str(target_uid), {})
+        player_id = user.get("player_id") or str(target_uid)
+        data["users"][str(target_uid)]["player_id"] = player_id
+        save_data(data)
+        user_state.pop(target_uid, None)
+
+        dl        = days_left(data, target_uid)
+        ref_bonus = user.get("ref_bonus", 0)
+        ref_code  = get_ref_code(target_uid, data)
+        url       = build_url(player_id, dl, user.get("username", ""), ref_bonus, ref_code)
+
+        bot.send_message(target_uid,
+            "✅ <b>Wpłata potwierdzona!</b>\n\n"
+            "🎉 Dostęp do predyktora został przyznany.\n\n"
+            "👇 Otwórz predyktor:",
+            parse_mode="HTML",
+            reply_markup=kb_open_app(url))
+
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        bot.answer_callback_query(call.id, f"✅ Dostęp przyznany użytkownikowi {target_uid}")
+        bot.send_message(ADMIN_ID, f"✅ Dostęp przyznany: <code>{target_uid}</code>", parse_mode="HTML")
+
+    elif action == "reject":
+        user_state[target_uid] = "waiting_screenshot"
+        bot.send_message(target_uid,
+            "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
+            "Upewnij się, że zrzut ekranu pokazuje potwierdzenie wpłaty w SlotsGems "
+            "i wyślij go ponownie 🔄",
+            parse_mode="HTML")
+
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        bot.answer_callback_query(call.id, f"❌ Odrzucono, użytkownik może wysłać ponownie")
+        bot.send_message(ADMIN_ID, f"❌ Odrzucono: <code>{target_uid}</code>", parse_mode="HTML")
+
 
 # ── ID ENTRY ──────────────────────────────────────────────
 
