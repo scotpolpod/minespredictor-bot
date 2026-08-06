@@ -469,12 +469,23 @@ def is_vip(username):
         return False
     return username.lower() in [v.lower() for v in VIP_USERNAMES]
 
-def build_url(player_id, dl, username="", ref_bonus=0, ref_code=""):
-    vip     = "&vip=1" if is_vip(username) else ""
+def build_url(player_id, dl, username="", ref_bonus=0, ref_code="", extra=False):
+    vip     = "&vip=1"    if is_vip(username) else ""
     bonus   = f"&bonus={ref_bonus}" if ref_bonus > 0 else ""
     ref     = f"&ref={ref_code}"    if ref_code    else ""
     bot_u   = f"&bot={BOT_USERNAME}" if BOT_USERNAME else ""
-    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}{bonus}{ref}{bot_u}"
+    ext     = "&extra=1"  if extra else ""
+    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}{bonus}{ref}{bot_u}{ext}"
+
+def build_url_for_user(uid, data):
+    user      = data["users"].get(str(uid), {})
+    player_id = user.get("player_id") or str(uid)
+    dl        = days_left(data, uid)
+    username  = user.get("username", "")
+    ref_bonus = user.get("ref_bonus", 0)
+    ref_code  = get_ref_code(uid, data)
+    extra     = bool(user.get("extra_access"))
+    return build_url(player_id, dl, username, ref_bonus, ref_code, extra=extra)
 
 def gen_code():
     return "MP-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -1116,6 +1127,24 @@ def handle_webapp_data(message):
                 f"😔 Tym razem bez nagrody...\n"
                 f"Spróbuj jutro — szczęście się uśmiechnie! 🍀",
                 parse_mode="HTML")
+
+    elif payload.get('type') == 'extra_request':
+        data = load_data()
+        if not is_subscribed(data, uid):
+            return
+        user_state[uid] = "waiting_extra_screenshot"
+        uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
+        bot.send_message(uid,
+            "⭐ <b>Ekstra Sygnał — weryfikacja</b>\n\n"
+            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w SlotsGems. "
+            "Po weryfikacji dostęp zostanie przyznany automatycznie ✅",
+            parse_mode="HTML")
+        if ADMIN_ID:
+            notify_admin(
+                f"⭐ <b>NOWE ZGŁOSZENIE — Ekstra Sygnał</b>\n\n"
+                f"👤 {uname_str} (id=<code>{uid}</code>)\n"
+                f"💰 Deklarowana wpłata: <b>300 zł</b>\n\n"
+                f"Czekam na zrzut ekranu od użytkownika...")
 
     elif payload.get('type') == 'win':
         game = payload.get('game', 'mines')
@@ -1900,6 +1929,95 @@ def cb_ext_approve_reject(call):
                 parse_mode="HTML")
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
             bot.answer_callback_query(call.id, "❌ Odrzucono")
+
+# ── EKSTRA SIGNAL: screenshot handler ─────────────────────
+
+@bot.message_handler(
+    content_types=["photo"],
+    func=lambda m: user_state.get(m.from_user.id) == "waiting_extra_screenshot"
+)
+def msg_extra_screenshot(message):
+    uid = message.from_user.id
+    data = load_data()
+    if not is_subscribed(data, uid):
+        bot.send_message(uid, "🔒 Twoja subskrypcja wygasła. Użyj /start aby odnowić.")
+        user_state.pop(uid, None)
+        return
+
+    uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
+    name_str  = message.from_user.first_name or ""
+    user      = data["users"].get(str(uid), {})
+    sub_end   = user.get("subscription_end", "—")
+    plan_days = user.get("plan_days", "?")
+    wins      = user.get("wins_mines", 0) + user.get("wins_penalty", 0)
+
+    bot.send_message(uid,
+        "✅ Zrzut ekranu otrzymany!\n\n"
+        "⏳ Zrzut ekranu jest weryfikowany. "
+        "Dostęp zostanie przyznany automatycznie ✅")
+
+    if not ADMIN_ID:
+        return
+
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("⭐ Zatwierdź Ekstra dostęp", callback_data=f"xtr_approve_{uid}"),
+        InlineKeyboardButton("❌ Odrzuć", callback_data=f"xtr_reject_{uid}")
+    )
+    bot.forward_message(ADMIN_ID, uid, message.message_id)
+    bot.send_message(ADMIN_ID,
+        f"⭐ <b>EKSTRA SYGNAŁ — weryfikacja wpłaty 300 zł</b>\n\n"
+        f"👤 {name_str} {uname_str}\n"
+        f"🆔 Telegram ID: <code>{uid}</code>\n"
+        f"📅 Subskrypcja do: {sub_end[:10] if sub_end != '—' else '—'}\n"
+        f"🏆 Łączne wygrane: {wins}\n\n"
+        f"Zatwierdź lub odrzuć dostęp do Ekstra Sygnału:",
+        parse_mode="HTML", reply_markup=kb)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("xtr_approve_") or c.data.startswith("xtr_reject_"))
+def cb_xtr_approve_reject(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak uprawnień.")
+        return
+
+    parts      = call.data.split("_", 2)
+    action     = parts[1]   # "approve" or "reject"
+    target_uid = int(parts[2])
+    data       = load_data()
+
+    if action == "approve":
+        data["users"][str(target_uid)]["extra_access"] = True
+        save_data(data)
+        user_state.pop(target_uid, None)
+
+        url = build_url_for_user(target_uid, data)
+        user = data["users"].get(str(target_uid), {})
+        dl   = days_left(data, target_uid)
+
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("⭐ Otwórz Ekstra Sygnał", web_app=WebAppInfo(url=url)))
+        bot.send_message(target_uid,
+            "⭐ <b>Ekstra Sygnał odblokowany!</b>\n\n"
+            "🎉 Wpłata potwierdzona — masz dostęp do ekskluzywnego sygnału penalty.\n\n"
+            "Dostępny <b>1 raz dziennie</b>. Kliknij przycisk aby otworzyć:",
+            parse_mode="HTML", reply_markup=kb)
+
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        bot.answer_callback_query(call.id, f"⭐ Ekstra dostęp przyznany!")
+        bot.send_message(ADMIN_ID, f"⭐ Ekstra dostęp przyznany: <code>{target_uid}</code>", parse_mode="HTML")
+
+    elif action == "reject":
+        user_state[target_uid] = "waiting_extra_screenshot"
+        bot.send_message(target_uid,
+            "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
+            "Upewnij się że wpłaciłeś minimum <b>300 zł</b> w SlotsGems "
+            "i wyślij zrzut ekranu ponownie 🔄",
+            parse_mode="HTML")
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        bot.answer_callback_query(call.id, "❌ Odrzucono")
+        bot.send_message(ADMIN_ID, f"❌ Ekstra odrzucony: <code>{target_uid}</code>", parse_mode="HTML")
+
 
 def trial_expiry_scheduler():
     """Checks every minute for expired 1-day trials and sends extension offer once."""
