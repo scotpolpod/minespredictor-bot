@@ -326,7 +326,7 @@ def refresh_vavada_cache(force=False):
             print(f"Vavada Redis save error: {e}")
     print(f"Vavada cache updated: {len(players)} players total")
 
-MIN_DEPOSIT = 20.0  # ~80 zł в USD
+MIN_DEPOSIT = 12.5  # ~50 zł в USD
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
@@ -379,7 +379,7 @@ def vavada_token_scheduler():
         time.sleep(50 * 60)
 
 PLANS = [
-    {"label": "🎁 7 dni Trial",  "days": 7,  "price": "BEZPŁATNY"},
+    {"label": "🎁 24h Trial",    "days": 1,  "price": "BEZPŁATNY"},
     {"label": "📅 14 dni",       "days": 14, "price": "250 zł"},
     {"label": "📅 30 dni",       "days": 30, "price": "399 zł"},
     {"label": "📅 60 dni",       "days": 60, "price": "649 zł"},
@@ -682,7 +682,7 @@ def cmd_start(message):
             "🎯 Algorytm przewiduje miny, kryształy i strefy penalty.\n\n"
             "🔒 Aby korzystać — aktywuj subskrypcję.\n"
             "Masz kod? Kliknij <b>«Mam kod aktywacyjny»</b>.\n\n"
-            "🎁 Chcesz <b>7 dni za darmo</b>? Napisz do <a href='https://t.me/rmpl13'>@rmpl13</a>!\n\n"
+            "🎁 Chcesz <b>24h za darmo</b>? Napisz do <a href='https://t.me/rmpl13'>@rmpl13</a>!\n\n"
             "💳 <b>Wybierz plan:</b>",
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -799,6 +799,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
         "first_name":       first_name or existing.get("first_name", ""),
         "player_id":        player_id,
         "tg_id":            uid,
+        "plan_days":        days,
         # preserve other fields so they survive the overwrite
         "start_at":         existing.get("start_at"),
         "intro_sent":       existing.get("intro_sent"),
@@ -1019,14 +1020,14 @@ def msg_id(message):
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
-                f"🎯 Wymagane minimum: <b>~80 zł</b>\n\n"
+                f"🎯 Wymagane minimum: <b>~50 zł</b>\n\n"
                 f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SlotsGems "
                 f"i wyślij swój <b>login ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~80 zł</b> w SlotsGems.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~50 zł</b> w SlotsGems.\n\n"
                 f"Po wpłacie wyślij swój <b>login ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
@@ -1426,7 +1427,7 @@ def cb_adm_newcode(call):
         bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
     kb = InlineKeyboardMarkup(row_width=3)
     kb.add(
-        InlineKeyboardButton("7 dni",  callback_data="adm_gen_7"),
+        InlineKeyboardButton("24h (Trial)", callback_data="adm_gen_1"),
         InlineKeyboardButton("14 dni", callback_data="adm_gen_14"),
         InlineKeyboardButton("30 dni", callback_data="adm_gen_30"),
         InlineKeyboardButton("60 dni", callback_data="adm_gen_60"),
@@ -1777,6 +1778,161 @@ def intro_scheduler():
             print(f"intro_scheduler error: {e}")
         time.sleep(60)
 
+# ── TRIAL EXPIRY → offer +3 days for 100 zł ───────────────
+
+TRIAL_DAYS        = 1          # trial length in days
+EXTENSION_DAYS    = 3          # bonus days offered
+EXTENSION_DEPOSIT = 100        # zł required
+
+def send_trial_expiry_offer(uid_str, user):
+    uid = int(uid_str)
+    name = user.get("first_name") or user.get("username") or "Użytkownik"
+    try:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("📸 Wyślij potwierdzenie wpłaty", callback_data=f"ext_screenshot_{uid}"))
+        bot.send_message(uid,
+            f"⏰ <b>Twój darmowy dostęp wygasł!</b>\n\n"
+            f"Mamy dla Ciebie ofertę specjalną:\n\n"
+            f"💎 Wpłać <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems i otrzymaj "
+            f"<b>+{EXTENSION_DAYS} dni</b> dostępu gratis!\n\n"
+            f"Kliknij przycisk poniżej, wyślij zrzut ekranu potwierdzenia wpłaty "
+            f"— dostęp zostanie przyznany automatycznie po weryfikacji ✅",
+            parse_mode="HTML", reply_markup=kb)
+        print(f"Trial expiry offer sent to {uid_str}")
+    except Exception as e:
+        print(f"Trial expiry offer error {uid_str}: {e}")
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ext_screenshot_"))
+def cb_ext_screenshot(call):
+    uid = call.from_user.id
+    data = load_data()
+    user = data["users"].get(str(uid), {})
+    # Проверяем что подписка действительно истекла
+    if is_subscribed(data, uid):
+        bot.answer_callback_query(call.id, "У тебя ещё активна подписка.", show_alert=True)
+        return
+    user_state[uid] = "waiting_ext_screenshot"
+    bot.answer_callback_query(call.id)
+    bot.send_message(uid,
+        f"📸 Wyślij zrzut ekranu potwierdzający wpłatę <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems:",
+        parse_mode="HTML")
+
+@bot.message_handler(
+    content_types=["photo"],
+    func=lambda m: user_state.get(m.from_user.id) == "waiting_ext_screenshot"
+)
+def msg_ext_screenshot(message):
+    uid = message.from_user.id
+    data = load_data()
+    if is_subscribed(data, uid):
+        bot.send_message(uid, "✅ Twoja subskrypcja jest już aktywna.")
+        user_state.pop(uid, None)
+        return
+
+    uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
+    bot.send_message(uid,
+        "✅ Zrzut ekranu otrzymany!\n\n"
+        "⏳ Zrzut ekranu jest weryfikowany. "
+        "Dostęp zostanie przyznany automatycznie ✅")
+
+    if not ADMIN_ID:
+        return
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton(f"✅ Zatwierdź +{EXTENSION_DAYS} dni", callback_data=f"ext_approve_{uid}"),
+        InlineKeyboardButton("❌ Odrzuć", callback_data=f"ext_reject_{uid}")
+    )
+    bot.forward_message(ADMIN_ID, uid, message.message_id)
+    bot.send_message(ADMIN_ID,
+        f"📸 <b>Przedłużenie trialu (+{EXTENSION_DAYS} dni)</b>\n\n"
+        f"👤 {uname_str} (id={uid})\n"
+        f"💰 Deklarowana wpłata: {EXTENSION_DEPOSIT} zł\n\n"
+        f"Zatwierdź lub odrzuć:",
+        parse_mode="HTML", reply_markup=kb)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("ext_approve_") or c.data.startswith("ext_reject_"))
+def cb_ext_approve_reject(call):
+    if not is_admin(call):
+        bot.answer_callback_query(call.id, "Brak uprawnień.")
+        return
+
+    action, target_uid_str = call.data.split("_", 2)[0], call.data.split("_", 2)[2]
+    target_uid = int(target_uid_str)
+    data = load_data()
+
+    if action == "ext":
+        # determine approve or reject from full callback data
+        if call.data.startswith("ext_approve_"):
+            # Add EXTENSION_DAYS to subscription
+            user = data["users"].get(str(target_uid), {})
+            old_end = user.get("subscription_end")
+            if old_end and datetime.fromisoformat(old_end) > datetime.now():
+                new_end = datetime.fromisoformat(old_end) + timedelta(days=EXTENSION_DAYS)
+            else:
+                new_end = datetime.now() + timedelta(days=EXTENSION_DAYS)
+            data["users"][str(target_uid)]["subscription_end"] = new_end.isoformat()
+            data["users"][str(target_uid)]["trial_offer_sent"] = True
+            save_data(data)
+            user_state.pop(target_uid, None)
+
+            dl        = days_left(data, target_uid)
+            player_id = user.get("player_id") or str(target_uid)
+            ref_bonus = user.get("ref_bonus", 0)
+            ref_code  = get_ref_code(target_uid, data)
+            url       = build_url(player_id, dl, user.get("username", ""), ref_bonus, ref_code)
+
+            bot.send_message(target_uid,
+                f"✅ <b>Wpłata potwierdzona!</b>\n\n"
+                f"🎉 Otrzymałeś <b>+{EXTENSION_DAYS} dni</b> dostępu!\n\n"
+                f"👇 Otwórz predyktor:",
+                parse_mode="HTML", reply_markup=kb_open_app(url))
+
+            bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+            bot.answer_callback_query(call.id, f"✅ +{EXTENSION_DAYS} dni przyznane")
+            bot.send_message(ADMIN_ID, f"✅ Przedłużono: <code>{target_uid}</code>", parse_mode="HTML")
+
+        elif call.data.startswith("ext_reject_"):
+            user_state[target_uid] = "waiting_ext_screenshot"
+            bot.send_message(target_uid,
+                "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
+                f"Upewnij się że wpłaciłeś minimum <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems "
+                f"i wyślij zrzut ekranu ponownie 🔄",
+                parse_mode="HTML")
+            bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+            bot.answer_callback_query(call.id, "❌ Odrzucono")
+
+def trial_expiry_scheduler():
+    """Checks every minute for expired 1-day trials and sends extension offer once."""
+    while True:
+        try:
+            data = load_data()
+            now  = datetime.now()
+            changed = False
+            for uid_str, user in list(data["users"].items()):
+                # Только триальные (1 день), оффер ещё не отправляли
+                if user.get("trial_offer_sent"):
+                    continue
+                activated_code = user.get("activated_code", "")
+                plan_days = user.get("plan_days", 0)
+                if plan_days != TRIAL_DAYS:
+                    continue
+                sub_end = user.get("subscription_end")
+                if not sub_end:
+                    continue
+                end_dt = datetime.fromisoformat(sub_end)
+                # Триал истёк
+                if end_dt > now:
+                    continue
+                user["trial_offer_sent"] = True
+                changed = True
+                threading.Thread(target=send_trial_expiry_offer, args=(uid_str, dict(user)), daemon=True).start()
+            if changed:
+                save_data(data)
+        except Exception as e:
+            print(f"trial_expiry_scheduler error: {e}")
+        time.sleep(60)
+
+
 # ── RUN ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1797,6 +1953,7 @@ if __name__ == "__main__":
     threading.Thread(target=sb_scheduler, daemon=True).start()
     threading.Thread(target=intro_scheduler, daemon=True).start()
     threading.Thread(target=vavada_token_scheduler, daemon=True).start()
+    threading.Thread(target=trial_expiry_scheduler, daemon=True).start()
     print("Schedulery uruchomione.")
 
     try:
