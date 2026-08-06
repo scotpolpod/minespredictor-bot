@@ -475,7 +475,7 @@ def build_url(player_id, dl, username="", ref_bonus=0, ref_code="", extra=False)
     ref     = f"&ref={ref_code}"    if ref_code    else ""
     bot_u   = f"&bot={BOT_USERNAME}" if BOT_USERNAME else ""
     ext     = "&extra=1"  if extra else ""
-    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=6{vip}{bonus}{ref}{bot_u}{ext}"
+    return f"{WEBAPP_URL}?uid={player_id}&days={dl}&v=7{vip}{bonus}{ref}{bot_u}{ext}"
 
 def build_url_for_user(uid, data):
     user      = data["users"].get(str(uid), {})
