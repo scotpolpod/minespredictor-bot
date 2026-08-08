@@ -1130,8 +1130,6 @@ def handle_webapp_data(message):
 
     elif payload.get('type') == 'extra_request':
         data = load_data()
-        if not is_subscribed(data, uid):
-            return
         user_state[uid] = "waiting_extra_screenshot"
         uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
         bot.send_message(uid,
