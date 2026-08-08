@@ -649,9 +649,28 @@ def cmd_start(message):
     touch_activity(uid, data)
     user_state.pop(uid, None)
 
-    # Deep-link referral: /start REF-XXXXXXXX
+    # Deep-link params
     parts       = message.text.strip().split(maxsplit=1)
-    start_param = parts[1].upper() if len(parts) > 1 else ""
+    start_param = parts[1] if len(parts) > 1 else ""
+
+    # Ekstra Signal request via deep link
+    if start_param.lower() == "ekstra_request":
+        user_state[uid] = "waiting_extra_screenshot"
+        uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
+        bot.send_message(uid,
+            "⭐ <b>Ekstra Sygnał — weryfikacja</b>\n\n"
+            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w SlotsGems. "
+            "Po weryfikacji dostęp zostanie przyznany automatycznie ✅",
+            parse_mode="HTML")
+        if ADMIN_ID:
+            notify_admin(
+                f"⭐ <b>NOWE ZGŁOSZENIE — Ekstra Sygnał</b>\n\n"
+                f"👤 {uname_str} (id=<code>{uid}</code>)\n"
+                f"💰 Deklarowana wpłata: <b>300 zł</b>\n\n"
+                f"Czekam na zrzut ekranu od użytkownika...")
+        return
+
+    start_param = start_param.upper()
     if start_param.startswith("REF-"):
         user = data["users"].setdefault(str(uid), {})
         if not user.get("pending_ref"):          # store only once, prevent overwrite
