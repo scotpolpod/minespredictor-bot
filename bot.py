@@ -369,7 +369,7 @@ def vavada_token_scheduler():
             ok = _vavada_try_refresh()
             if not ok:
                 notify_admin(
-                    "🚨 <b>SlotsGems token refresh FAILED!</b>\n\n"
+                    "🚨 <b>LeonBet token refresh FAILED!</b>\n\n"
                     "Refresh token wygasł lub jest nieprawidłowy.\n\n"
                     "Zaloguj się na <b>affiliates.vavadapart.com</b>, skopiuj nowy "
                     "<code>refresh_token</code> z DevTools (Cookies) i zaktualizuj "
@@ -659,7 +659,7 @@ def cmd_start(message):
         uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
         bot.send_message(uid,
             "⭐ <b>Ekstra Sygnał — weryfikacja</b>\n\n"
-            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w SlotsGems. "
+            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w LeonBet. "
             "Po weryfikacji dostęp zostanie przyznany automatycznie ✅",
             parse_mode="HTML")
         if ADMIN_ID:
@@ -696,7 +696,7 @@ def cmd_start(message):
             bot.send_message(uid,
                 f"👋 Witaj w <b>MinesPredictor</b>!\n\n"
                 f"✅ Subskrypcja aktywna — pozostało <b>{dl} dni</b>\n\n"
-                f"📸 Wyślij <b>zrzut ekranu potwierdzenia wpłaty</b> w SlotsGems, "
+                f"📸 Wyślij <b>zrzut ekranu potwierdzenia wpłaty</b> w LeonBet, "
                 f"aby odblokować dostęp. Dostęp zostanie przyznany automatycznie po weryfikacji ✅",
                 parse_mode="HTML")
     else:
@@ -862,7 +862,7 @@ def process_code(uid, code, chat_id, username="", first_name=""):
             f"🎉 Subskrypcja aktywowana!\n\n"
             f"📅 Plan: <b>{days} dni</b>\n"
             f"⏳ Aktywna do: <b>{exp_str}</b>\n\n"
-            f"📸 Aby odblokować dostęp — dokonaj wpłaty w kasynie SlotsGems "
+            f"📸 Aby odblokować dostęp — dokonaj wpłaty w kasynie LeonBet "
             f"i wyślij tutaj <b>zrzut ekranu potwierdzenia wpłaty</b>.\n\n"
             f"Dostęp zostanie przyznany automatycznie po weryfikacji ✅",
             parse_mode="HTML")
@@ -990,7 +990,7 @@ def cb_approve_reject(call):
         user_state[target_uid] = "waiting_screenshot"
         bot.send_message(target_uid,
             "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
-            "Upewnij się, że zrzut ekranu pokazuje potwierdzenie wpłaty w SlotsGems "
+            "Upewnij się, że zrzut ekranu pokazuje potwierdzenie wpłaty w LeonBet "
             "i wyślij go ponownie 🔄",
             parse_mode="HTML")
 
@@ -1025,13 +1025,13 @@ def msg_id(message):
     if sb_status == "not_found":
         bot.send_message(uid,
             "❌ <b>Nie znaleziono takiego loginu.</b>\n\n"
-            "Sprawdź czy wpisałeś poprawny login z kasyna SlotsGems.\n\n"
+            "Sprawdź czy wpisałeś poprawny login z kasyna LeonBet.\n\n"
             "Jeśli właśnie założyłeś konto — poczekaj chwilę i spróbuj ponownie 🔄",
             parse_mode="HTML")
         notify_admin(
-            f"⚠️ <b>Brak gracza w SlotsGems</b>\n\n"
+            f"⚠️ <b>Brak gracza w LeonBet</b>\n\n"
             f"👤 User: {uname_str} (id={uid})\n"
-            f"🔑 Login SlotsGems: <code>{player_id}</code>\n\n"
+            f"🔑 Login LeonBet: <code>{player_id}</code>\n\n"
             f"Możliwe: błędny login lub gracz nie jest w Twoim linku.\n"
             f"Użyj /setid {uid} {player_id} aby przyznać dostęp ręcznie.")
         return
@@ -1043,7 +1043,7 @@ def msg_id(message):
         notify_admin(
             f"💰 <b>Za mały depozyt</b>\n\n"
             f"👤 User: {uname_str} (id={uid})\n"
-            f"🔑 Login SlotsGems: <code>{player_id}</code>\n"
+            f"🔑 Login LeonBet: <code>{player_id}</code>\n"
             f"💵 Depozyt: <b>${dep_usd:.2f}</b> / wymagane ${MIN_DEPOSIT:.0f}\n"
             f"Brakuje: ~{need_pln} zł")
         if dep_usd > 0:
@@ -1051,13 +1051,13 @@ def msg_id(message):
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
                 f"🎯 Wymagane minimum: <b>~50 zł</b>\n\n"
-                f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w SlotsGems "
+                f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w LeonBet "
                 f"i wyślij swój <b>login ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~50 zł</b> w SlotsGems.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~50 zł</b> w LeonBet.\n\n"
                 f"Po wpłacie wyślij swój <b>login ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
@@ -1153,7 +1153,7 @@ def handle_webapp_data(message):
         uname_str = f"@{message.from_user.username}" if message.from_user.username else f"id={uid}"
         bot.send_message(uid,
             "⭐ <b>Ekstra Sygnał — weryfikacja</b>\n\n"
-            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w SlotsGems. "
+            "Wyślij <b>zrzut ekranu potwierdzający wpłatę 300 zł</b> w LeonBet. "
             "Po weryfikacji dostęp zostanie przyznany automatycznie ✅",
             parse_mode="HTML")
         if ADMIN_ID:
@@ -1194,7 +1194,7 @@ def cb_change_id(call):
         return
     user_state[uid] = "entering_id"
     try:
-        bot.send_message(uid, "🔢 Wpisz nowy <b>login SlotsGems</b>:", parse_mode="HTML")
+        bot.send_message(uid, "🔢 Wpisz nowy <b>login LeonBet</b>:", parse_mode="HTML")
     except Exception as e:
         print(f"cb_change_id error: {e}")
     bot.answer_callback_query(call.id)
@@ -1237,7 +1237,7 @@ def cmd_checkid(message):
         return
     pid = parts[1].strip()
 
-    bot.send_message(message.chat.id, "⏳ Odpytuję SlotsGems (odświeżam cache)...")
+    bot.send_message(message.chat.id, "⏳ Odpytuję LeonBet (odświeżam cache)...")
 
     # Сначала пробуем обновить токен
     refresh_ok = _vavada_try_refresh()
@@ -1684,7 +1684,7 @@ def cmd_sbstatus(message):
     total = len(players)
     with_dep = sum(1 for v in players.values() if v)
     bot.send_message(message.chat.id,
-        f"📊 <b>SlotsGems cache</b>\n\n"
+        f"📊 <b>LeonBet cache</b>\n\n"
         f"👥 Игроков в кеше: <b>{total}</b>\n"
         f"💰 С депозитом: <b>{with_dep}</b>\n"
         f"🔑 Token: <code>{'OK' if SPINBETTER_TOKEN else 'НЕТ'}</code>\n"
@@ -1717,7 +1717,7 @@ def cmd_sbcheck(message):
     dep_pln = round(dep * 4.0)
     status = "✅ OK" if dep >= MIN_DEPOSIT else f"⚠️ Za mało — brakuje ${MIN_DEPOSIT - dep:.2f} (~{round((MIN_DEPOSIT - dep) * 4)} zł)"
     bot.send_message(message.chat.id,
-        f"🔍 <b>SlotsGems check</b>\n\n"
+        f"🔍 <b>LeonBet check</b>\n\n"
         f"🆔 ID: <code>{pid}</code>\n"
         f"💰 Suma depozytów: <b>${dep:.2f}</b> (~{dep_pln} zł)\n"
         f"📊 Status: {status}",
@@ -1839,7 +1839,7 @@ def send_trial_expiry_offer(uid_str, user):
         bot.send_message(uid,
             f"⏰ <b>Twój darmowy dostęp wygasł!</b>\n\n"
             f"Mamy dla Ciebie ofertę specjalną:\n\n"
-            f"💎 Wpłać <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems i otrzymaj "
+            f"💎 Wpłać <b>{EXTENSION_DEPOSIT} zł</b> w LeonBet i otrzymaj "
             f"<b>+{EXTENSION_DAYS} dni</b> dostępu gratis!\n\n"
             f"Kliknij przycisk poniżej, wyślij zrzut ekranu potwierdzenia wpłaty "
             f"— dostęp zostanie przyznany automatycznie po weryfikacji ✅",
@@ -1860,7 +1860,7 @@ def cb_ext_screenshot(call):
     user_state[uid] = "waiting_ext_screenshot"
     bot.answer_callback_query(call.id)
     bot.send_message(uid,
-        f"📸 Wyślij zrzut ekranu potwierdzający wpłatę <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems:",
+        f"📸 Wyślij zrzut ekranu potwierdzający wpłatę <b>{EXTENSION_DEPOSIT} zł</b> w LeonBet:",
         parse_mode="HTML")
 
 @bot.message_handler(
@@ -1941,7 +1941,7 @@ def cb_ext_approve_reject(call):
             user_state[target_uid] = "waiting_ext_screenshot"
             bot.send_message(target_uid,
                 "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
-                f"Upewnij się że wpłaciłeś minimum <b>{EXTENSION_DEPOSIT} zł</b> w SlotsGems "
+                f"Upewnij się że wpłaciłeś minimum <b>{EXTENSION_DEPOSIT} zł</b> w LeonBet "
                 f"i wyślij zrzut ekranu ponownie 🔄",
                 parse_mode="HTML")
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
@@ -2028,7 +2028,7 @@ def cb_xtr_approve_reject(call):
         user_state[target_uid] = "waiting_extra_screenshot"
         bot.send_message(target_uid,
             "❌ <b>Wpłata nie została potwierdzona.</b>\n\n"
-            "Upewnij się że wpłaciłeś minimum <b>300 zł</b> w SlotsGems "
+            "Upewnij się że wpłaciłeś minimum <b>300 zł</b> w LeonBet "
             "i wyślij zrzut ekranu ponownie 🔄",
             parse_mode="HTML")
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
