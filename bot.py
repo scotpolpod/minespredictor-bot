@@ -326,7 +326,7 @@ def refresh_vavada_cache(force=False):
             print(f"Vavada Redis save error: {e}")
     print(f"Vavada cache updated: {len(players)} players total")
 
-MIN_DEPOSIT = 12.5  # ~50 zł в USD
+MIN_DEPOSIT = 25.0  # ~100 zł в USD
 
 def check_player(player_id):
     """Returns: 'not_found' | ('no_deposit', amount_usd) | 'ok'"""
@@ -1050,14 +1050,14 @@ def msg_id(message):
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
                 f"💰 Twój aktualny depozyt: <b>${dep_usd:.2f}</b> (~{dep_pln} zł)\n"
-                f"🎯 Wymagane minimum: <b>~50 zł</b>\n\n"
+                f"🎯 Wymagane minimum: <b>~100 zł</b>\n\n"
                 f"Brakuje Ci jeszcze <b>~{need_pln} zł</b> — dokonaj dopłaty w LeonBet "
                 f"i wyślij swój <b>login ponownie</b> 🔄",
                 parse_mode="HTML")
         else:
             bot.send_message(uid,
                 f"✅ <b>Rejestracja potwierdzona!</b>\n\n"
-                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~50 zł</b> w LeonBet.\n\n"
+                f"Aby odblokować dostęp — dokonaj wpłaty w wysokości <b>minimum ~100 zł</b> w LeonBet.\n\n"
                 f"Po wpłacie wyślij swój <b>login ponownie</b> — dostęp zostanie przyznany automatycznie 🎯",
                 parse_mode="HTML")
         return
