@@ -353,13 +353,8 @@ def check_player(player_id):
     return ("no_deposit", dep)
 
 def sb_scheduler():
-    """Updates Vavada cache every 3 minutes."""
-    while True:
-        try:
-            refresh_vavada_cache()
-        except Exception as e:
-            print(f"vavada_scheduler error: {e}")
-        time.sleep(VAVADA_CACHE_REFRESH)
+    """Vavada cache scheduler — disabled (verification off)."""
+    return
 
 def vavada_token_scheduler():
     """Refreshes Vavada access token every 50 minutes (token TTL = 1h)."""
@@ -1016,8 +1011,6 @@ def msg_id(message):
         bot.send_message(uid, "⚠️ Nieprawidłowe ID. Spróbuj ponownie:")
         return
 
-    # Свежий запрос к Vavada при вводе логина
-    refresh_vavada_cache()
     sb_status = check_player(player_id)
 
     uname_str = f"@{message.from_user.username}" if message.from_user.username else f"tg_id={uid}"
@@ -1237,18 +1230,7 @@ def cmd_checkid(message):
         return
     pid = parts[1].strip()
 
-    bot.send_message(message.chat.id, "⏳ Odpytuję LeonBet (odświeżam cache)...")
-
-    # Сначала пробуем обновить токен
-    refresh_ok = _vavada_try_refresh()
-    bot.send_message(message.chat.id,
-        f"🔑 Token refresh: {'✅ OK' if refresh_ok else '⚠️ не удался (используем текущий)'}")
-
-    try:
-        refresh_vavada_cache(force=True)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Błąd odświeżania cache: <code>{e}</code>", parse_mode="HTML")
-        return
+    bot.send_message(message.chat.id, "⚠️ Weryfikacja LeonBet wyłączona. /checkid niedostępne.")
 
     players = _vavada_cache
     if _redis:
@@ -2087,7 +2069,7 @@ if __name__ == "__main__":
     threading.Thread(target=inactive_scheduler, daemon=True).start()
     threading.Thread(target=sb_scheduler, daemon=True).start()
     threading.Thread(target=intro_scheduler, daemon=True).start()
-    threading.Thread(target=vavada_token_scheduler, daemon=True).start()
+    # threading.Thread(target=vavada_token_scheduler, daemon=True).start()  # disabled
     threading.Thread(target=trial_expiry_scheduler, daemon=True).start()
     print("Schedulery uruchomione.")
 
