@@ -1455,7 +1455,7 @@ def cb_adm_newcode(call):
         bot.answer_callback_query(call.id, "Brak dostępu.", show_alert=True); return
     kb = InlineKeyboardMarkup(row_width=3)
     kb.add(
-        InlineKeyboardButton("3 dni (Trial)", callback_data="adm_gen_1"),
+        InlineKeyboardButton("3 dni (Trial)", callback_data="adm_gen_3"),
         InlineKeyboardButton("14 dni", callback_data="adm_gen_14"),
         InlineKeyboardButton("30 dni", callback_data="adm_gen_30"),
         InlineKeyboardButton("60 dni", callback_data="adm_gen_60"),
