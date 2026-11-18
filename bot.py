@@ -707,7 +707,7 @@ def cmd_start(message):
             "🎯 Algorytm przewiduje miny, kryształy i strefy penalty.\n\n"
             "🔒 Aby korzystać — aktywuj subskrypcję.\n"
             "Masz kod? Kliknij <b>«Mam kod aktywacyjny»</b>.\n\n"
-            "🎁 Chcesz <b>24h za darmo</b>? Napisz do <a href='https://t.me/rmpl13'>@rmpl13</a>!\n\n"
+            "🎁 Chcesz <b>3 dni za darmo</b>? Napisz do <a href='https://t.me/rmpl13'>@rmpl13</a>!\n\n"
             "💳 <b>Wybierz plan:</b>",
             parse_mode="HTML",
             disable_web_page_preview=True,
